@@ -12,7 +12,7 @@ export const searchSchema = z.object({
   limit: z.number().min(1).max(50).optional().describe('Maximum number of results (default: 10)'),
   threshold: z.number().min(0).max(1).optional().describe('Minimum similarity score (default: 0.5)'),
   documentIds: z.array(z.string()).optional().describe('Filter by specific document IDs'),
-  fileTypes: z.array(z.enum(['txt', 'md', 'docx', 'pdf'])).optional().describe('Filter by file types'),
+  fileTypes: z.array(z.enum(['txt', 'md', 'docx', 'pdf', 'pptx', 'xlsx'])).optional().describe('Filter by file types'),
   rerank: z.boolean().optional().describe('Enable reranking with cross-encoder (default: true)'),
 });
 

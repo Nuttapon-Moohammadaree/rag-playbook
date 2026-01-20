@@ -6,6 +6,8 @@ import { extname } from 'path';
 import { parseTextFile, parseMarkdownFile } from './text.js';
 import { parseDocxFile } from './docx.js';
 import { parsePdfFile } from './pdf.js';
+import { parsePptxFile } from './pptx.js';
+import { parseXlsxFile } from './xlsx.js';
 import type { ParsedDocument, FileType } from '../../../types/index.js';
 
 /**
@@ -17,6 +19,9 @@ const FILE_TYPE_MAP: Record<string, FileType> = {
   '.markdown': 'md',
   '.docx': 'docx',
   '.pdf': 'pdf',
+  '.pptx': 'pptx',
+  '.xlsx': 'xlsx',
+  '.xls': 'xlsx',
 };
 
 /**
@@ -79,9 +84,13 @@ export async function parseDocument(filepath: string): Promise<ParsedDocument> {
       return parseDocxFile(filepath);
     case 'pdf':
       return parsePdfFile(filepath);
+    case 'pptx':
+      return parsePptxFile(filepath);
+    case 'xlsx':
+      return parseXlsxFile(filepath);
     default:
       throw new Error(`Parser not implemented for file type: ${fileType}`);
   }
 }
 
-export { parseTextFile, parseMarkdownFile, parseDocxFile, parsePdfFile };
+export { parseTextFile, parseMarkdownFile, parseDocxFile, parsePdfFile, parsePptxFile, parseXlsxFile };
