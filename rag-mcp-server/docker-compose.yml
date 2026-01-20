@@ -1,0 +1,53 @@
+services:
+  # Qdrant Vector Database
+  qdrant:
+    image: qdrant/qdrant:v1.15.1
+    container_name: rag-mcp-qdrant
+    ports:
+      - "6333:6333"   # REST API
+      - "6334:6334"   # gRPC
+    volumes:
+      - ./data/qdrant:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__LOG_LEVEL=INFO
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:6333/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - rag-network
+
+  # RAG MCP Server (containerized mode)
+  rag-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rag-mcp-server
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - LITELLM_API_KEY=${LITELLM_API_KEY}
+      - LITELLM_BASE_URL=${LITELLM_BASE_URL:-https://csai.ait.co.th/litellm/v1}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-BAAI/bge-m3}
+      - SQLITE_PATH=/app/data/sqlite/rag.db
+      - VECTOR_SIZE=1024
+      - CHUNK_SIZE=512
+      - CHUNK_OVERLAP=50
+    volumes:
+      - ./data/sqlite:/app/data/sqlite
+      - ${DOCUMENTS_PATH:-/home/aitma/rag-playbook/CS_Playbook}:/documents:ro
+    profiles:
+      - full
+    restart: unless-stopped
+    networks:
+      - rag-network
+
+networks:
+  rag-network:
+    driver: bridge

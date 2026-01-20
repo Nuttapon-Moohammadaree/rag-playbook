@@ -1,0 +1,32 @@
+{
+  "name": "rag-mcp-server",
+  "version": "1.0.0",
+  "description": "RAG MCP Server for Claude Code - Semantic document search with BGE-M3 embeddings",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch",
+    "mcp": "node dist/mcp/server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "@qdrant/js-client-rest": "^1.12.0",
+    "better-sqlite3": "^11.6.0",
+    "mammoth": "^1.11.0",
+    "pdf-parse": "^1.1.1",
+    "uuid": "^10.0.0",
+    "zod": "^3.25.0",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.10.0",
+    "@types/uuid": "^10.0.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
