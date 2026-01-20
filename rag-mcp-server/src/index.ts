@@ -23,6 +23,7 @@ export { getIngestionService } from './core/ingestion/service.js';
 export { getRetrievalService } from './core/retrieval/service.js';
 export { getEmbeddingService } from './core/embedding/service.js';
 export { getChunkingService } from './core/chunking/service.js';
+export { getRerankingService } from './core/reranking/service.js';
 export * from './types/index.js';
 
 /**
@@ -42,8 +43,8 @@ export class RagMcpClient {
   /**
    * Search for documents
    */
-  async search(query: string, limit = 10): Promise<SearchResult[]> {
-    return this.retrievalService.search({ query, limit });
+  async search(query: string, limit = 10, rerank?: boolean): Promise<SearchResult[]> {
+    return this.retrievalService.search({ query, limit, rerank });
   }
 
   /**
@@ -192,13 +193,28 @@ async function cli(): Promise<void> {
       }
 
       case 'search': {
-        const query = args.slice(1).join(' ');
+        // Parse --rerank and --no-rerank flags
+        const searchArgs = args.slice(1);
+        const rerankIndex = searchArgs.findIndex(a => a === '--rerank');
+        const noRerankIndex = searchArgs.findIndex(a => a === '--no-rerank');
+
+        let rerank: boolean | undefined;
+        if (rerankIndex !== -1) {
+          rerank = true;
+          searchArgs.splice(rerankIndex, 1);
+        } else if (noRerankIndex !== -1) {
+          rerank = false;
+          searchArgs.splice(noRerankIndex, 1);
+        }
+
+        const query = searchArgs.join(' ');
         if (!query) {
-          console.error('Usage: search <query>');
+          console.error('Usage: search <query> [--rerank|--no-rerank]');
           process.exit(1);
         }
-        console.log(`Searching: "${query}"`);
-        const results = await client.search(query);
+        const rerankLabel = rerank === true ? ' (rerank: on)' : rerank === false ? ' (rerank: off)' : '';
+        console.log(`Searching: "${query}"${rerankLabel}`);
+        const results = await client.search(query, 10, rerank);
         if (results.length === 0) {
           console.log('No results found');
         } else {
@@ -277,14 +293,29 @@ async function cli(): Promise<void> {
       }
 
       case 'ask': {
-        const question = args.slice(1).join(' ');
+        // Parse --rerank and --no-rerank flags
+        const askArgs = args.slice(1);
+        const askRerankIndex = askArgs.findIndex(a => a === '--rerank');
+        const askNoRerankIndex = askArgs.findIndex(a => a === '--no-rerank');
+
+        let askRerank: boolean | undefined;
+        if (askRerankIndex !== -1) {
+          askRerank = true;
+          askArgs.splice(askRerankIndex, 1);
+        } else if (askNoRerankIndex !== -1) {
+          askRerank = false;
+          askArgs.splice(askNoRerankIndex, 1);
+        }
+
+        const question = askArgs.join(' ');
         if (!question) {
-          console.error('Usage: ask <question>');
+          console.error('Usage: ask <question> [--rerank|--no-rerank]');
           process.exit(1);
         }
-        console.log(`Question: "${question}"\n`);
+        const askRerankLabel = askRerank === true ? ' (rerank: on)' : askRerank === false ? ' (rerank: off)' : '';
+        console.log(`Question: "${question}"${askRerankLabel}\n`);
         const askService = getAskService();
-        const response = await askService.ask({ question });
+        const response = await askService.ask({ question, rerank: askRerank });
         console.log('Answer:');
         console.log(response.answer);
         if (response.sources.length > 0) {
@@ -308,7 +339,11 @@ Commands:
   index <filepath>     Index a single document
   batch-index <dir>    Index all documents in directory
   search <query>       Search indexed documents
+    --rerank           Enable reranking (default: enabled)
+    --no-rerank        Disable reranking
   ask <question>       Ask a question (RAG + LLM)
+    --rerank           Enable reranking (default: enabled)
+    --no-rerank        Disable reranking
   list                 List all indexed documents
   delete <id>          Delete a document by ID
   stats                Show server statistics

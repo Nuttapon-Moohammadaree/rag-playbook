@@ -3,12 +3,14 @@
  */
 
 import { getEmbeddingService } from '../embedding/service.js';
+import { getRerankingService } from '../reranking/service.js';
 import { searchVectors, ensureCollection } from '../../storage/qdrant.js';
 import { config } from '../../config/index.js';
 import type { SearchRequest, SearchResult, SearchFilters } from '../../types/index.js';
 
 export class RetrievalService {
   private embeddingService = getEmbeddingService();
+  private rerankingService = getRerankingService();
   private initialized = false;
 
   /**
@@ -21,7 +23,7 @@ export class RetrievalService {
   }
 
   /**
-   * Search for relevant chunks
+   * Search for relevant chunks with optional reranking
    */
   async search(request: SearchRequest): Promise<SearchResult[]> {
     await this.initialize();
@@ -31,19 +33,45 @@ export class RetrievalService {
       limit = config.search.defaultLimit,
       threshold = config.search.defaultThreshold,
       filters,
+      rerank,
     } = request;
 
     if (!query || query.trim().length === 0) {
       return [];
     }
 
+    // Determine if reranking should be used
+    const useRerank = rerank ?? this.rerankingService.isEnabled();
+
+    // Calculate candidate limit - fetch more if reranking
+    const candidateLimit = useRerank
+      ? limit * this.rerankingService.getCandidateMultiplier()
+      : limit;
+
     // Generate query embedding
     const queryEmbedding = await this.embeddingService.embedSingle(query);
 
-    // Search vectors
-    const results = await searchVectors(queryEmbedding, limit, threshold, filters);
+    // Search vectors with expanded limit for reranking candidates
+    const candidates = await searchVectors(queryEmbedding, candidateLimit, threshold, filters);
 
-    return results;
+    // Apply reranking if enabled and we have more candidates than final limit
+    if (useRerank && candidates.length > limit) {
+      const reranked = await this.rerankingService.rerank({
+        query,
+        documents: candidates.map(c => c.content),
+        topN: limit,
+      });
+
+      // Reorder results by rerank scores
+      const rerankedResults = reranked.map(r => ({
+        ...candidates[r.index],
+        score: r.relevanceScore, // Replace vector similarity with rerank score
+      }));
+
+      return rerankedResults;
+    }
+
+    return candidates.slice(0, limit);
   }
 
   /**

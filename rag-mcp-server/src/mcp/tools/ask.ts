@@ -12,6 +12,7 @@ export const askSchema = z.object({
   limit: z.number().min(1).max(20).optional().describe('Maximum number of context chunks to use (default: 5)'),
   threshold: z.number().min(0).max(1).optional().describe('Minimum similarity score for context (default: 0.5)'),
   model: z.string().optional().describe('LLM model to use (default: gpt-oss-120b)'),
+  rerank: z.boolean().optional().describe('Enable reranking with cross-encoder (default: true)'),
 });
 
 export interface AskResultData {
@@ -42,6 +43,7 @@ export async function ask(
       limit: params.limit,
       threshold: params.threshold,
       model: params.model,
+      rerank: params.rerank,
     });
 
     return {

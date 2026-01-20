@@ -75,6 +75,19 @@ export interface SearchRequest {
   limit?: number;
   threshold?: number;
   filters?: SearchFilters;
+  rerank?: boolean;
+}
+
+// Reranking types
+export interface RerankRequest {
+  query: string;
+  documents: string[];
+  topN?: number;
+}
+
+export interface RerankResult {
+  index: number;
+  relevanceScore: number;
 }
 
 export interface SearchFilters {
@@ -161,5 +174,11 @@ export interface Config {
   search: {
     defaultLimit: number;
     defaultThreshold: number;
+  };
+  reranking: {
+    enabled: boolean;
+    model: string;
+    topN: number;
+    candidateMultiplier: number;
   };
 }

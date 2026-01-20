@@ -11,6 +11,7 @@ export interface AskRequest {
   limit?: number;
   threshold?: number;
   model?: string;
+  rerank?: boolean;
 }
 
 export interface AskResponse {
@@ -62,13 +63,15 @@ export class AskService {
       limit = DEFAULT_LIMIT,
       threshold = DEFAULT_THRESHOLD,
       model = DEFAULT_MODEL,
+      rerank,
     } = request;
 
-    // Retrieve relevant context
+    // Retrieve relevant context with optional reranking
     const searchResults = await this.retrievalService.search({
       query: question,
       limit,
       threshold,
+      rerank,
     });
 
     if (searchResults.length === 0) {

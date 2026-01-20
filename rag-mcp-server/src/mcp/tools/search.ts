@@ -13,6 +13,7 @@ export const searchSchema = z.object({
   threshold: z.number().min(0).max(1).optional().describe('Minimum similarity score (default: 0.5)'),
   documentIds: z.array(z.string()).optional().describe('Filter by specific document IDs'),
   fileTypes: z.array(z.enum(['txt', 'md', 'docx', 'pdf'])).optional().describe('Filter by file types'),
+  rerank: z.boolean().optional().describe('Enable reranking with cross-encoder (default: true)'),
 });
 
 // Tool implementation
@@ -30,6 +31,7 @@ export async function search(
         documentIds: params.documentIds,
         fileTypes: params.fileTypes,
       },
+      rerank: params.rerank,
     });
 
     const items: SearchResultItem[] = results.map(r => ({

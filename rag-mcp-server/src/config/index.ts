@@ -31,6 +31,14 @@ function getEnvNumber(key: string, defaultValue: number): number {
   return parsed;
 }
 
+function getEnvBoolean(key: string, defaultValue: boolean): boolean {
+  const value = process.env[key];
+  if (value === undefined) {
+    return defaultValue;
+  }
+  return value.toLowerCase() === 'true' || value === '1';
+}
+
 export const config: Config = {
   qdrant: {
     url: getEnv('QDRANT_URL', 'http://localhost:6333'),
@@ -54,6 +62,12 @@ export const config: Config = {
   search: {
     defaultLimit: getEnvNumber('SEARCH_LIMIT', 10),
     defaultThreshold: parseFloat(getEnv('SEARCH_THRESHOLD', '0.5')),
+  },
+  reranking: {
+    enabled: getEnvBoolean('RERANKING_ENABLED', true),
+    model: getEnv('RERANKER_MODEL', 'BAAI/bge-reranker-v2-m3'),
+    topN: getEnvNumber('RERANK_TOP_N', 5),
+    candidateMultiplier: getEnvNumber('RERANK_CANDIDATES', 4),
   },
 };
 
