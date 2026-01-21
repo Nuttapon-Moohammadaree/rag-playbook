@@ -11,6 +11,7 @@ import {
 import { tools, getTool, zodToJsonSchema } from './tools/index.js';
 import { getDatabase, closeDatabase } from '../storage/sqlite.js';
 import { ensureCollection } from '../storage/qdrant.js';
+import { sanitizeError } from '../utils/security.js';
 
 const SERVER_NAME = 'rag-mcp-server';
 const SERVER_VERSION = '1.0.0';
@@ -79,14 +80,18 @@ function createServer(): Server {
         isError: !result.success,
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      // Log full error internally for debugging
+      console.error('Tool execution error:', error);
+
+      // Return sanitized error to client
+      const safeMessage = sanitizeError(error);
       return {
         content: [
           {
             type: 'text',
             text: JSON.stringify({
               success: false,
-              error: `Tool execution failed: ${errorMessage}`,
+              error: `Tool execution failed: ${safeMessage}`,
             }),
           },
         ],

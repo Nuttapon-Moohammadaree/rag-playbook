@@ -20,7 +20,8 @@ export interface AskResponse {
     filename: string;
     filepath: string;
     content: string;
-    score: number;
+    score: number;           // Normalized score [0,1]
+    originalScore: number;   // Original raw score from retrieval/reranking
   }>;
   model: string;
   usage?: {
@@ -84,9 +85,13 @@ export class AskService {
     });
 
     if (searchResults.length === 0) {
-      // Detect if query contains Thai characters for bilingual response
+      // Detect if query or context is likely Thai for bilingual response
       const hasThai = /[\u0E00-\u0E7F]/.test(question);
-      const noResultsMessage = hasThai
+      // Also check for common Thai question words even without Thai script
+      const hasThaiPatterns = /\b(ยังไง|อะไร|ทำไม|ที่ไหน|เมื่อไร|ใคร)\b/.test(question);
+
+      const respondInThai = hasThai || hasThaiPatterns;
+      const noResultsMessage = respondInThai
         ? 'ไม่พบข้อมูลที่เกี่ยวข้องในฐานข้อมูล กรุณาลองถามคำถามอื่น หรือตรวจสอบว่าได้ index เอกสารที่เกี่ยวข้องแล้ว'
         : 'No relevant information found in the database. Please try a different question or ensure the relevant documents have been indexed.';
       return {
@@ -112,8 +117,10 @@ export class AskService {
         filename: r.document.filename,
         filepath: r.document.filepath,
         content: (r.content?.substring(0, 200) ?? '') + '...',
-        // Normalize score to [0,1] range and round to 3 decimal places
+        // Normalize score to [0,1] range and round to 3 decimal places for display
         score: Math.round(Math.max(0, Math.min(1, r.score)) * 1000) / 1000,
+        // Preserve original score for debugging/analysis
+        originalScore: r.score,
       })),
       model,
       usage: llmResponse.usage ? {
@@ -168,50 +175,64 @@ Question: ${question}
 
 Please answer the question based on the context above.`;
 
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.3,
-        max_tokens: 2000,
-      }),
-    });
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), config.litellm.timeout);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`LLM API error (${response.status}): ${errorText}`);
+    try {
+      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: userPrompt },
+          ],
+          temperature: 0.3,
+          max_tokens: 2000,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`LLM API error (${response.status}): ${errorText}`);
+      }
+
+      const data = await response.json() as LLMResponse;
+
+      // Validate LLM response structure
+      if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
+        throw new Error('LLM API returned invalid response: missing or empty choices array');
+      }
+
+      const firstChoice = data.choices[0];
+      if (!firstChoice?.message?.content) {
+        throw new Error('LLM API returned invalid response: missing message content');
+      }
+
+      const answer = firstChoice.message.content;
+
+      return {
+        answer,
+        usage: data.usage ? {
+          promptTokens: data.usage.prompt_tokens,
+          completionTokens: data.usage.completion_tokens,
+          totalTokens: data.usage.total_tokens,
+        } : undefined,
+      };
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error(`LLM API request timed out after ${config.litellm.timeout}ms`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    const data = await response.json() as LLMResponse;
-
-    // Validate LLM response structure
-    if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
-      throw new Error('LLM API returned invalid response: missing or empty choices array');
-    }
-
-    const firstChoice = data.choices[0];
-    if (!firstChoice?.message?.content) {
-      throw new Error('LLM API returned invalid response: missing message content');
-    }
-
-    const answer = firstChoice.message.content;
-
-    return {
-      answer,
-      usage: data.usage ? {
-        promptTokens: data.usage.prompt_tokens,
-        completionTokens: data.usage.completion_tokens,
-        totalTokens: data.usage.total_tokens,
-      } : undefined,
-    };
   }
 }
 

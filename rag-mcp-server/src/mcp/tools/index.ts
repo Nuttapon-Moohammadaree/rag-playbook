@@ -135,15 +135,47 @@ function unwrapZodType(schema: z.ZodType<unknown>): { schema: z.ZodType<unknown>
 }
 
 function zodTypeToJsonSchema(schema: z.ZodType<unknown>): Record<string, unknown> {
+  // Handle wrapped types first
+  if (schema instanceof z.ZodOptional) {
+    return zodTypeToJsonSchema(schema.unwrap());
+  }
+
+  if (schema instanceof z.ZodDefault) {
+    return zodTypeToJsonSchema(schema.removeDefault());
+  }
+
+  if (schema instanceof z.ZodNullable) {
+    const inner = zodTypeToJsonSchema(schema.unwrap());
+    return { ...inner, nullable: true };
+  }
+
+  // Handle effects (refinements, transforms)
+  if (schema instanceof z.ZodEffects) {
+    return zodTypeToJsonSchema(schema.innerType());
+  }
+
+  // Primitive types
   if (schema instanceof z.ZodString) {
     const result: Record<string, unknown> = { type: 'string' };
     if (schema.description) result.description = schema.description;
+    // Extract min/max length from checks
+    const checks = (schema as unknown as { _def: { checks: Array<{ kind: string; value: number }> } })._def.checks ?? [];
+    for (const check of checks) {
+      if (check.kind === 'min') result.minLength = check.value;
+      if (check.kind === 'max') result.maxLength = check.value;
+    }
     return result;
   }
 
   if (schema instanceof z.ZodNumber) {
     const result: Record<string, unknown> = { type: 'number' };
     if (schema.description) result.description = schema.description;
+    // Extract min/max from checks
+    const checks = (schema as unknown as { _def: { checks: Array<{ kind: string; value: number }> } })._def.checks ?? [];
+    for (const check of checks) {
+      if (check.kind === 'min') result.minimum = check.value;
+      if (check.kind === 'max') result.maximum = check.value;
+    }
     return result;
   }
 
@@ -171,9 +203,45 @@ function zodTypeToJsonSchema(schema: z.ZodType<unknown>): Record<string, unknown
     return result;
   }
 
-  if (schema instanceof z.ZodOptional) {
-    return zodTypeToJsonSchema(schema.unwrap());
+  // Object type (nested)
+  if (schema instanceof z.ZodObject) {
+    return zodToJsonSchema(schema);
   }
 
+  // Record type (dictionary)
+  if (schema instanceof z.ZodRecord) {
+    const result: Record<string, unknown> = {
+      type: 'object',
+      additionalProperties: zodTypeToJsonSchema(schema.valueSchema),
+    };
+    if (schema.description) result.description = schema.description;
+    return result;
+  }
+
+  // Union type
+  if (schema instanceof z.ZodUnion) {
+    const options = (schema as unknown as { options: z.ZodType<unknown>[] }).options;
+    return {
+      oneOf: options.map((opt: z.ZodType<unknown>) => zodTypeToJsonSchema(opt)),
+    };
+  }
+
+  // Literal type
+  if (schema instanceof z.ZodLiteral) {
+    const value = (schema as unknown as { value: unknown }).value;
+    return { type: typeof value, const: value };
+  }
+
+  // Null type
+  if (schema instanceof z.ZodNull) {
+    return { type: 'null' };
+  }
+
+  // Unknown/Any - use empty object schema
+  if (schema instanceof z.ZodUnknown || schema instanceof z.ZodAny) {
+    return {};
+  }
+
+  // Fallback to string
   return { type: 'string' };
 }

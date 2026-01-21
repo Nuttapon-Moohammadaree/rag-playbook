@@ -5,6 +5,7 @@
 import { z } from 'zod';
 import { getAskService } from '../../core/ask/service.js';
 import type { ToolResult } from '../../types/index.js';
+import { askRateLimiter } from '../../utils/security.js';
 
 // Tool schema
 export const askSchema = z.object({
@@ -22,6 +23,7 @@ export interface AskResultData {
     filepath: string;
     content: string;
     score: number;
+    originalScore: number;
   }>;
   model: string;
   usage?: {
@@ -50,6 +52,14 @@ export async function ask(
   params: z.infer<typeof askSchema>
 ): Promise<ToolResult<AskResultData>> {
   try {
+    // Check rate limit
+    if (!askRateLimiter.isAllowed('ask')) {
+      return {
+        success: false,
+        error: 'Rate limit exceeded. Please wait before asking more questions.',
+      };
+    }
+
     const askService = getAskService();
 
     const result = await askService.ask({

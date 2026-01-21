@@ -7,6 +7,7 @@ import { mkdirSync, existsSync } from 'fs';
 import { dirname } from 'path';
 import { config } from '../config/index.js';
 import type { Document, DocumentStatus, FileType, DocumentMetadata } from '../types/index.js';
+import { safeJsonParse } from '../utils/security.js';
 
 let db: Database.Database | null = null;
 
@@ -325,8 +326,10 @@ function rowToDocument(row: DocumentRow): Document {
     indexedAt: row.indexed_at ? new Date(row.indexed_at) : null,
     status: row.status as DocumentStatus,
     chunkCount: row.chunk_count,
-    metadata: JSON.parse(row.metadata) as DocumentMetadata,
+    // Use safe JSON parsing with fallback to empty object
+    metadata: safeJsonParse<DocumentMetadata>(row.metadata, {}),
     summary: row.summary ?? undefined,
-    tags: row.tags ? JSON.parse(row.tags) as string[] : undefined,
+    // Use safe JSON parsing with fallback to undefined
+    tags: row.tags ? safeJsonParse<string[]>(row.tags, []) : undefined,
   };
 }

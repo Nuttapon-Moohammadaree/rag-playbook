@@ -9,6 +9,7 @@ import { createHash } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 
 import { parseDocument, getFileType, getMimeType, isSupportedFile } from './parsers/index.js';
+import { validateFilePath, validateDocumentId, documentLockManager } from '../../utils/security.js';
 import { getChunkingService } from '../chunking/service.js';
 import { getEmbeddingService } from '../embedding/service.js';
 import { getSummarizer } from '../llm/summarizer.js';
@@ -58,29 +59,34 @@ export class IngestionService {
   ): Promise<IngestionResult> {
     await this.initialize();
 
-    const filename = basename(filepath);
+    // Validate and canonicalize path to prevent directory traversal
+    const validatedPath = validateFilePath(filepath);
+    const filename = basename(validatedPath);
+
+    // Acquire document lock to prevent race conditions with concurrent indexing
+    // This ensures only one indexing operation can happen per filepath at a time
+    const releaseLock = await documentLockManager.acquire(validatedPath);
 
     try {
       // Validate file
-      if (!isSupportedFile(filepath)) {
-        throw new Error(`Unsupported file type: ${filepath}`);
+      if (!isSupportedFile(validatedPath)) {
+        throw new Error(`Unsupported file type: ${filename}`);
       }
 
-      const fileStat = await stat(filepath);
+      const fileStat = await stat(validatedPath);
       if (!fileStat.isFile()) {
-        throw new Error(`Not a file: ${filepath}`);
+        throw new Error(`Not a file: ${filename}`);
       }
 
       // Compute checksum first (needed for comparison and new record)
-      const checksum = await this.computeChecksum(filepath);
-      const fileType = getFileType(filepath)!;
+      const checksum = await this.computeChecksum(validatedPath);
+      const fileType = getFileType(validatedPath)!;
       const documentId = uuidv4();
 
       // Use transaction to atomically check and create document record
-      // This prevents race conditions with concurrent indexing of the same file
       const transactionResult = withTransaction(() => {
         // Check if already indexed (inside transaction for atomicity)
-        const existing = getDocumentByPath(filepath);
+        const existing = getDocumentByPath(validatedPath);
 
         if (existing && !options.forceReindex) {
           // Check if file has changed
@@ -101,7 +107,7 @@ export class IngestionService {
         const document: Omit<Document, 'createdAt' | 'updatedAt'> = {
           id: documentId,
           filename,
-          filepath,
+          filepath: validatedPath,
           fileType,
           fileSize: fileStat.size,
           mimeType: getMimeType(fileType),
@@ -118,6 +124,7 @@ export class IngestionService {
 
       // Handle transaction result
       if (transactionResult.type === 'existing') {
+        // Lock will be released in finally block
         return {
           documentId: transactionResult.documentId,
           filename,
@@ -126,20 +133,40 @@ export class IngestionService {
         };
       }
 
+      // For reindex case, we need to delete old document and create new record
+      let actualDocumentId = documentId;
       if (transactionResult.type === 'reindex') {
         // Delete old document (async operations must be outside transaction)
+        // Lock is still held, preventing other concurrent reindex attempts
         await this.deleteDocument(transactionResult.existingId);
-        // Re-run indexing with the cleaned state
-        return this.indexDocument(filepath, { ...options, forceReindex: false });
+
+        // Create new document record after deletion
+        const newDocumentId = uuidv4();
+        actualDocumentId = newDocumentId;
+
+        const document: Omit<Document, 'createdAt' | 'updatedAt'> = {
+          id: newDocumentId,
+          filename,
+          filepath: validatedPath,
+          fileType,
+          fileSize: fileStat.size,
+          mimeType: getMimeType(fileType),
+          checksum,
+          status: 'processing',
+          chunkCount: 0,
+          indexedAt: null,
+          metadata: {},
+        };
+        insertDocument(document);
       }
 
       try {
         // Parse document
-        const parsed = await parseDocument(filepath);
+        const parsed = await parseDocument(validatedPath);
 
         // Update metadata from parsed content
         if (parsed.metadata) {
-          updateDocument(documentId, {
+          updateDocument(actualDocumentId, {
             metadata: parsed.metadata,
           });
         }
@@ -157,7 +184,7 @@ export class IngestionService {
         // Prepare chunk data
         const chunkData = chunks.map((chunk, index) => ({
           id: uuidv4(),
-          documentId,
+          documentId: actualDocumentId,
           content: chunk.content,
           chunkIndex: index,
           startOffset: chunk.startOffset,
@@ -177,6 +204,17 @@ export class IngestionService {
           );
         }
 
+        // Validate embedding dimensions match configured vector size
+        const expectedDimension = config.qdrant.vectorSize;
+        for (let i = 0; i < embeddingResponse.embeddings.length; i++) {
+          const embedding = embeddingResponse.embeddings[i];
+          if (embedding && embedding.length !== expectedDimension) {
+            throw new Error(
+              `Embedding dimension mismatch at index ${i}: expected ${expectedDimension}, got ${embedding.length}`
+            );
+          }
+        }
+
         // Store chunks in SQLite
         insertChunks(chunkData);
 
@@ -191,11 +229,11 @@ export class IngestionService {
             vector,
             payload: {
               chunk_id: chunk.id,
-              document_id: documentId,
+              document_id: actualDocumentId,
               content: chunk.content,
               chunk_index: chunk.chunkIndex,
               filename,
-              filepath,
+              filepath: validatedPath,
               file_type: fileType,
               metadata: chunk.metadata,
             },
@@ -231,7 +269,7 @@ export class IngestionService {
         }
 
         // Update document status
-        updateDocument(documentId, {
+        updateDocument(actualDocumentId, {
           status: 'indexed',
           chunkCount: chunks.length,
           indexedAt: new Date(),
@@ -240,14 +278,14 @@ export class IngestionService {
         });
 
         return {
-          documentId,
+          documentId: actualDocumentId,
           filename,
           status: 'success',
           chunkCount: chunks.length,
         };
       } catch (error) {
         // Mark document as failed
-        updateDocument(documentId, {
+        updateDocument(actualDocumentId, {
           status: 'failed',
           metadata: {
             error: error instanceof Error ? error.message : String(error),
@@ -263,6 +301,8 @@ export class IngestionService {
         chunkCount: 0,
         error: error instanceof Error ? error.message : String(error),
       };
+    } finally {
+      releaseLock();
     }
   }
 
@@ -335,6 +375,17 @@ export class IngestionService {
           throw new Error(
             `Embedding count mismatch: expected ${chunkData.length}, got ${embeddingResponse.embeddings.length}`
           );
+        }
+
+        // Validate embedding dimensions match configured vector size
+        const expectedDimension = config.qdrant.vectorSize;
+        for (let i = 0; i < embeddingResponse.embeddings.length; i++) {
+          const embedding = embeddingResponse.embeddings[i];
+          if (embedding && embedding.length !== expectedDimension) {
+            throw new Error(
+              `Embedding dimension mismatch at index ${i}: expected ${expectedDimension}, got ${embedding.length}`
+            );
+          }
         }
 
         // Store chunks in SQLite
@@ -430,6 +481,9 @@ export class IngestionService {
    * Delete a document and its chunks
    */
   async deleteDocument(documentId: string): Promise<boolean> {
+    // Validate document ID format
+    validateDocumentId(documentId);
+
     await this.initialize();
 
     // Delete vectors from Qdrant

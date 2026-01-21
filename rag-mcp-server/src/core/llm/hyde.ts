@@ -5,6 +5,8 @@
  */
 
 import { getLLMService, type LLMService } from './service.js';
+import { sanitizeQueryInput } from '../../utils/security.js';
+import { LRUCache } from '../../utils/lru-cache.js';
 
 const HYDE_SYSTEM_PROMPT = `You are a helpful assistant that generates hypothetical document passages.
 Given a question, write a passage that would directly answer the question.
@@ -13,37 +15,15 @@ Write as if you are writing documentation or a knowledge base article.
 If the question is in Thai, write the passage in Thai.
 Do not include phrases like "This document explains..." - just write the content directly.`;
 
-interface CacheEntry {
-  value: string;
-  accessedAt: number;
-}
-
 export class HyDE {
   private llmService: LLMService;
   private enabled: boolean;
-  private cache: Map<string, CacheEntry>;
-  private cacheMaxSize: number;
+  private cache: LRUCache<string, string>;
 
   constructor(enabled: boolean = false) {
     this.llmService = getLLMService();
     this.enabled = enabled;
-    this.cache = new Map();
-    this.cacheMaxSize = 500;
-  }
-
-  /**
-   * Sanitize query input to prevent prompt injection
-   */
-  private sanitizeQuery(query: string): string {
-    // Trim and limit length
-    let sanitized = query.trim().substring(0, 500);
-    // Remove potential prompt injection patterns
-    sanitized = sanitized
-      .replace(/\bignore\s+(previous|above|all)\s+(instructions?|prompts?)\b/gi, '')
-      .replace(/\b(system|assistant|user)\s*:/gi, '')
-      .replace(/```[\s\S]*?```/g, '') // Remove code blocks
-      .trim();
-    return sanitized;
+    this.cache = new LRUCache(500);
   }
 
   /**
@@ -54,22 +34,21 @@ export class HyDE {
       return query;
     }
 
-    // Validate and sanitize input
+    // Validate and sanitize input using Unicode-aware sanitization
     if (!query || query.trim().length === 0) {
       return query;
     }
 
-    const sanitizedQuery = this.sanitizeQuery(query);
+    const sanitizedQuery = sanitizeQueryInput(query, 500);
     if (sanitizedQuery.length === 0) {
       // Return empty string if query was entirely filtered out (potential injection)
       return '';
     }
 
-    // Check cache first (LRU: update access time on hit)
+    // Check cache first (LRU cache automatically updates access order)
     const cached = this.cache.get(sanitizedQuery);
-    if (cached) {
-      cached.accessedAt = Date.now();
-      return cached.value;
+    if (cached !== undefined) {
+      return cached;
     }
 
     try {
@@ -88,7 +67,7 @@ Write a detailed passage that would answer this question:`;
 
       // Validate - should have some content
       if (hypotheticalDoc && hypotheticalDoc.length > 50) {
-        this.addToCache(sanitizedQuery, hypotheticalDoc);
+        this.cache.set(sanitizedQuery, hypotheticalDoc);
         return hypotheticalDoc;
       }
 
@@ -159,27 +138,6 @@ Write a detailed passage that would answer this question:`;
     if (query.split(/\s+/).length > 5) return true;
 
     return false;
-  }
-
-  /**
-   * Add to cache with LRU eviction (removes least recently used entry when full)
-   */
-  private addToCache(query: string, doc: string): void {
-    if (this.cache.size >= this.cacheMaxSize) {
-      // Find and remove least recently used entry
-      let lruKey: string | null = null;
-      let lruTime = Infinity;
-      for (const [key, entry] of this.cache) {
-        if (entry.accessedAt < lruTime) {
-          lruTime = entry.accessedAt;
-          lruKey = key;
-        }
-      }
-      if (lruKey) {
-        this.cache.delete(lruKey);
-      }
-    }
-    this.cache.set(query, { value: doc, accessedAt: Date.now() });
   }
 
   /**

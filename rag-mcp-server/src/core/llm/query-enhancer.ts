@@ -4,6 +4,8 @@
  */
 
 import { getLLMService, type LLMService } from './service.js';
+import { sanitizeQueryInput } from '../../utils/security.js';
+import { LRUCache } from '../../utils/lru-cache.js';
 
 const EXPANSION_SYSTEM_PROMPT = `You are a query expansion assistant. Your task is to expand short search queries into more comprehensive versions that include related terms, synonyms, and context.
 
@@ -24,37 +26,15 @@ Examples:
 - "VPN troubleshoot" → "VPN troubleshooting connection issues IPSec SSL tunnel debug connectivity problems แก้ปัญหา VPN"
 `;
 
-interface CacheEntry {
-  value: string;
-  accessedAt: number;
-}
-
 export class QueryEnhancer {
   private llmService: LLMService;
   private enabled: boolean;
-  private cache: Map<string, CacheEntry>;
-  private cacheMaxSize: number;
+  private cache: LRUCache<string, string>;
 
   constructor(enabled: boolean = true) {
     this.llmService = getLLMService();
     this.enabled = enabled;
-    this.cache = new Map();
-    this.cacheMaxSize = 1000;
-  }
-
-  /**
-   * Sanitize query input to prevent prompt injection
-   */
-  private sanitizeQuery(query: string): string {
-    // Trim and limit length
-    let sanitized = query.trim().substring(0, 500);
-    // Remove potential prompt injection patterns
-    sanitized = sanitized
-      .replace(/\bignore\s+(previous|above|all)\s+(instructions?|prompts?)\b/gi, '')
-      .replace(/\b(system|assistant|user)\s*:/gi, '')
-      .replace(/```[\s\S]*?```/g, '') // Remove code blocks
-      .trim();
-    return sanitized;
+    this.cache = new LRUCache(1000);
   }
 
   /**
@@ -66,8 +46,8 @@ export class QueryEnhancer {
       return query;
     }
 
-    // Sanitize input
-    const sanitizedQuery = this.sanitizeQuery(query);
+    // Sanitize input using Unicode-aware sanitization
+    const sanitizedQuery = sanitizeQueryInput(query, 500);
     if (sanitizedQuery.length === 0) {
       // Return empty string if query was entirely filtered out (potential injection)
       return '';
@@ -78,11 +58,10 @@ export class QueryEnhancer {
       return sanitizedQuery;
     }
 
-    // Check cache first (LRU: update access time on hit)
+    // Check cache first (LRU cache automatically updates access order)
     const cached = this.cache.get(sanitizedQuery);
-    if (cached) {
-      cached.accessedAt = Date.now();
-      return cached.value;
+    if (cached !== undefined) {
+      return cached;
     }
 
     try {
@@ -97,7 +76,7 @@ export class QueryEnhancer {
 
       // Validate the expansion - should be reasonable length and contain original terms
       if (expanded && expanded.length > sanitizedQuery.length && expanded.length < 500) {
-        this.addToCache(sanitizedQuery, expanded);
+        this.cache.set(sanitizedQuery, expanded);
         return expanded;
       }
 
@@ -121,27 +100,6 @@ export class QueryEnhancer {
    */
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
-  }
-
-  /**
-   * Add to cache with LRU eviction (removes least recently used entry when full)
-   */
-  private addToCache(query: string, expanded: string): void {
-    if (this.cache.size >= this.cacheMaxSize) {
-      // Find and remove least recently used entry
-      let lruKey: string | null = null;
-      let lruTime = Infinity;
-      for (const [key, entry] of this.cache) {
-        if (entry.accessedAt < lruTime) {
-          lruTime = entry.accessedAt;
-          lruKey = key;
-        }
-      }
-      if (lruKey) {
-        this.cache.delete(lruKey);
-      }
-    }
-    this.cache.set(query, { value: expanded, accessedAt: Date.now() });
   }
 
   /**

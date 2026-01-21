@@ -3,6 +3,7 @@
  */
 
 import { config } from '../../config/index.js';
+import { withRetry } from '../../utils/security.js';
 import type { EmbeddingResponse } from '../../types/index.js';
 
 const BATCH_SIZE = 32; // Process embeddings in batches
@@ -83,49 +84,61 @@ export class EmbeddingService {
   }
 
   /**
-   * Generate embeddings for a single batch
+   * Generate embeddings for a single batch with retry logic
    */
   private async embedBatch(texts: string[]): Promise<EmbeddingResponse> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+    return withRetry(
+      async () => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
-    try {
-      const response = await fetch(`${this.baseUrl}/embeddings`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
+        try {
+          const response = await fetch(`${this.baseUrl}/embeddings`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${this.apiKey}`,
+            },
+            body: JSON.stringify({
+              model: this.model,
+              input: texts,
+              encoding_format: 'float',
+            }),
+            signal: controller.signal,
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Embedding API error (${response.status}): ${errorText}`);
+          }
+
+          const data = await response.json() as LiteLLMEmbeddingResponse;
+
+          // Sort by index to ensure correct order
+          const sortedData = data.data.sort((a, b) => a.index - b.index);
+          const embeddings = sortedData.map(item => item.embedding);
+
+          return {
+            embeddings,
+            model: data.model,
+            usage: {
+              promptTokens: data.usage?.prompt_tokens ?? 0,
+              totalTokens: data.usage?.total_tokens ?? 0,
+            },
+          };
+        } finally {
+          clearTimeout(timeoutId);
+        }
+      },
+      {
+        maxRetries: 3,
+        initialDelayMs: 1000,
+        maxDelayMs: 10000,
+        onRetry: (attempt, error, delayMs) => {
+          console.warn(`Embedding API retry ${attempt}/3 after ${delayMs}ms: ${error.message}`);
         },
-        body: JSON.stringify({
-          model: this.model,
-          input: texts,
-          encoding_format: 'float',
-        }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Embedding API error (${response.status}): ${errorText}`);
       }
-
-      const data = await response.json() as LiteLLMEmbeddingResponse;
-
-      // Sort by index to ensure correct order
-      const sortedData = data.data.sort((a, b) => a.index - b.index);
-      const embeddings = sortedData.map(item => item.embedding);
-
-      return {
-        embeddings,
-        model: data.model,
-        usage: {
-          promptTokens: data.usage?.prompt_tokens ?? 0,
-          totalTokens: data.usage?.total_tokens ?? 0,
-        },
-      };
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    );
   }
 
   /**

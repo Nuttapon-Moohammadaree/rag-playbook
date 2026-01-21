@@ -186,26 +186,25 @@ export class RetrievalService {
 
     const embedding = await this.embeddingService.embedSingle(chunkContent);
 
-    const filters: SearchFilters | undefined = excludeDocumentId
-      ? { documentIds: [] } // Will need custom filter logic
-      : undefined;
+    // Fetch more results if we need to exclude a document
+    // We fetch extra to account for filtered-out results
+    const fetchLimit = excludeDocumentId ? limit * 3 + 10 : limit;
 
-    // Note: Qdrant doesn't have a simple "exclude" filter,
-    // so we fetch extra and filter client-side
     const results = await searchVectors(
       embedding,
-      limit + (excludeDocumentId ? 10 : 0),
+      fetchLimit,
       0.5,
-      filters
+      undefined  // Don't use documentIds filter for inclusion
     );
 
+    // Client-side filtering to exclude specific document
     if (excludeDocumentId) {
       return results
         .filter(r => r.documentId !== excludeDocumentId)
         .slice(0, limit);
     }
 
-    return results;
+    return results.slice(0, limit);
   }
 }
 

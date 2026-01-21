@@ -6,6 +6,15 @@ import { z } from 'zod';
 import { getIngestionService } from '../../core/ingestion/service.js';
 import { getAllDocuments, getDocumentById } from '../../storage/sqlite.js';
 import type { ToolResult, Document } from '../../types/index.js';
+import {
+  indexRateLimiter,
+  isValidUUID,
+  sanitizeError,
+} from '../../utils/security.js';
+
+// Constants for size limits
+const MAX_CONTENT_SIZE = 1_000_000;  // 1MB max content
+const MAX_METADATA_SIZE = 100_000;   // 100KB max metadata
 
 // Tool schemas
 export const indexDocumentSchema = z.object({
@@ -21,17 +30,33 @@ export const listDocumentsSchema = z.object({
 });
 
 export const deleteDocumentSchema = z.object({
-  documentId: z.string().describe('Document ID to delete'),
+  documentId: z.string()
+    .refine(isValidUUID, { message: 'Invalid document ID format: must be a valid UUID' })
+    .describe('Document ID to delete'),
 });
 
 export const getDocumentSchema = z.object({
-  documentId: z.string().describe('Document ID to retrieve'),
+  documentId: z.string()
+    .refine(isValidUUID, { message: 'Invalid document ID format: must be a valid UUID' })
+    .describe('Document ID to retrieve'),
 });
 
 export const indexTextSchema = z.object({
-  content: z.string().min(1).describe('Text content to index'),
-  title: z.string().min(1).describe('Title for the indexed content'),
-  metadata: z.record(z.unknown()).optional().describe('Optional metadata object'),
+  content: z.string()
+    .min(1)
+    .max(MAX_CONTENT_SIZE, { message: `Content exceeds maximum size of ${MAX_CONTENT_SIZE} characters` })
+    .describe('Text content to index'),
+  title: z.string()
+    .min(1)
+    .max(500, { message: 'Title exceeds maximum length of 500 characters' })
+    .describe('Title for the indexed content'),
+  metadata: z.record(z.unknown())
+    .optional()
+    .refine(
+      (val) => !val || JSON.stringify(val).length <= MAX_METADATA_SIZE,
+      { message: `Metadata exceeds maximum size of ${MAX_METADATA_SIZE} characters` }
+    )
+    .describe('Optional metadata object'),
 });
 
 // Tool implementations
@@ -39,6 +64,14 @@ export async function indexDocument(
   params: z.infer<typeof indexDocumentSchema>
 ): Promise<ToolResult<{ documentId: string; chunkCount: number }>> {
   try {
+    // Check rate limit
+    if (!indexRateLimiter.isAllowed('index_document')) {
+      return {
+        success: false,
+        error: 'Rate limit exceeded. Please wait before indexing more documents.',
+      };
+    }
+
     const ingestionService = getIngestionService();
     const result = await ingestionService.indexDocument(params.path, {
       forceReindex: params.force,
@@ -146,6 +179,14 @@ export async function indexText(
   params: z.infer<typeof indexTextSchema>
 ): Promise<ToolResult<{ documentId: string; chunkCount: number }>> {
   try {
+    // Check rate limit
+    if (!indexRateLimiter.isAllowed('index_text')) {
+      return {
+        success: false,
+        error: 'Rate limit exceeded. Please wait before indexing more content.',
+      };
+    }
+
     const ingestionService = getIngestionService();
     const result = await ingestionService.indexText(
       params.content,

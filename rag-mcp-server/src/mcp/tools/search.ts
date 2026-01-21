@@ -5,6 +5,7 @@
 import { z } from 'zod';
 import { getRetrievalService } from '../../core/retrieval/service.js';
 import type { ToolResult, SearchResult } from '../../types/index.js';
+import { searchRateLimiter } from '../../utils/security.js';
 
 // Tool schema
 export const searchSchema = z.object({
@@ -23,6 +24,14 @@ export async function search(
   params: z.infer<typeof searchSchema>
 ): Promise<ToolResult<{ results: SearchResultItem[]; total: number }>> {
   try {
+    // Check rate limit
+    if (!searchRateLimiter.isAllowed('search')) {
+      return {
+        success: false,
+        error: 'Rate limit exceeded. Please wait before performing more searches.',
+      };
+    }
+
     const retrievalService = getRetrievalService();
 
     const results = await retrievalService.search({

@@ -24,29 +24,45 @@ export async function ensureCollection(): Promise<void> {
 
   try {
     await qdrant.getCollection(collectionName);
-  } catch {
+  } catch (error) {
+    // Check if it's a "not found" error vs connection error
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const isNotFound = errorMessage.includes('not found') ||
+                       errorMessage.includes('Not found') ||
+                       errorMessage.includes('404');
+
+    if (!isNotFound) {
+      // Connection or other error - rethrow with context
+      throw new Error(`Failed to connect to Qdrant: ${errorMessage}`);
+    }
+
     // Collection doesn't exist, create it
-    await qdrant.createCollection(collectionName, {
-      vectors: {
-        size: config.qdrant.vectorSize,
-        distance: 'Cosine',
-      },
-      optimizers_config: {
-        default_segment_number: 2,
-      },
-      replication_factor: 1,
-    });
+    try {
+      await qdrant.createCollection(collectionName, {
+        vectors: {
+          size: config.qdrant.vectorSize,
+          distance: 'Cosine',
+        },
+        optimizers_config: {
+          default_segment_number: 2,
+        },
+        replication_factor: 1,
+      });
 
-    // Create payload indexes for filtering
-    await qdrant.createPayloadIndex(collectionName, {
-      field_name: 'document_id',
-      field_schema: 'keyword',
-    });
+      // Create payload indexes for filtering
+      await qdrant.createPayloadIndex(collectionName, {
+        field_name: 'document_id',
+        field_schema: 'keyword',
+      });
 
-    await qdrant.createPayloadIndex(collectionName, {
-      field_name: 'file_type',
-      field_schema: 'keyword',
-    });
+      await qdrant.createPayloadIndex(collectionName, {
+        field_name: 'file_type',
+        field_schema: 'keyword',
+      });
+    } catch (createError) {
+      const createMessage = createError instanceof Error ? createError.message : String(createError);
+      throw new Error(`Failed to create Qdrant collection: ${createMessage}`);
+    }
   }
 }
 
@@ -157,6 +173,7 @@ export async function searchVectors(
 export async function getCollectionInfo(): Promise<{
   vectorCount: number;
   status: string;
+  error?: string;
 }> {
   const qdrant = getQdrantClient();
 
@@ -166,10 +183,24 @@ export async function getCollectionInfo(): Promise<{
       vectorCount: info.points_count ?? 0,
       status: info.status,
     };
-  } catch {
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const isNotFound = errorMessage.includes('not found') ||
+                       errorMessage.includes('Not found') ||
+                       errorMessage.includes('404');
+
+    if (isNotFound) {
+      return {
+        vectorCount: 0,
+        status: 'not_initialized',
+      };
+    }
+
+    // Connection or other error - include error info
     return {
       vectorCount: 0,
-      status: 'not_initialized',
+      status: 'error',
+      error: `Failed to connect to Qdrant: ${errorMessage}`,
     };
   }
 }

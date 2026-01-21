@@ -29,6 +29,23 @@ export class ChunkingService {
     this.defaultChunkSize = config.chunking.defaultSize;
     this.defaultOverlap = config.chunking.defaultOverlap;
     this.minChunkSize = config.chunking.minChunkSize;
+
+    // Validate config consistency
+    if (this.defaultOverlap >= this.defaultChunkSize) {
+      console.warn(
+        `Warning: Chunk overlap (${this.defaultOverlap}) should be less than chunk size (${this.defaultChunkSize}). ` +
+        'Adjusting overlap to half of chunk size.'
+      );
+      this.defaultOverlap = Math.floor(this.defaultChunkSize / 2);
+    }
+
+    if (this.minChunkSize > this.defaultChunkSize) {
+      console.warn(
+        `Warning: Min chunk size (${this.minChunkSize}) is greater than default chunk size (${this.defaultChunkSize}). ` +
+        'Adjusting min chunk size to half of default chunk size.'
+      );
+      this.minChunkSize = Math.floor(this.defaultChunkSize / 2);
+    }
   }
 
   /**
