@@ -25,7 +25,9 @@ CREATE TABLE IF NOT EXISTS documents (
   indexed_at TEXT,
   status TEXT NOT NULL DEFAULT 'pending',
   chunk_count INTEGER NOT NULL DEFAULT 0,
-  metadata TEXT NOT NULL DEFAULT '{}'
+  metadata TEXT NOT NULL DEFAULT '{}',
+  summary TEXT,
+  tags TEXT DEFAULT '[]'
 );
 
 -- Chunks table
@@ -66,7 +68,26 @@ export function getDatabase(): Database.Database {
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA);
 
+  // Run migrations for existing databases
+  runMigrations(db);
+
   return db;
+}
+
+function runMigrations(database: Database.Database): void {
+  // Check if summary column exists
+  const columns = database.prepare("PRAGMA table_info(documents)").all() as Array<{ name: string }>;
+  const columnNames = columns.map(c => c.name);
+
+  // Add summary column if it doesn't exist
+  if (!columnNames.includes('summary')) {
+    database.exec('ALTER TABLE documents ADD COLUMN summary TEXT');
+  }
+
+  // Add tags column if it doesn't exist
+  if (!columnNames.includes('tags')) {
+    database.exec("ALTER TABLE documents ADD COLUMN tags TEXT DEFAULT '[]'");
+  }
 }
 
 export function closeDatabase(): void {
@@ -82,8 +103,8 @@ export function insertDocument(doc: Omit<Document, 'createdAt' | 'updatedAt'>): 
   const now = new Date().toISOString();
 
   const stmt = database.prepare(`
-    INSERT INTO documents (id, filename, filepath, file_type, file_size, mime_type, checksum, status, chunk_count, metadata, indexed_at, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO documents (id, filename, filepath, file_type, file_size, mime_type, checksum, status, chunk_count, metadata, indexed_at, created_at, updated_at, summary, tags)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -99,7 +120,9 @@ export function insertDocument(doc: Omit<Document, 'createdAt' | 'updatedAt'>): 
     JSON.stringify(doc.metadata),
     doc.indexedAt?.toISOString() ?? null,
     now,
-    now
+    now,
+    doc.summary ?? null,
+    JSON.stringify(doc.tags ?? [])
   );
 
   return {
@@ -129,6 +152,14 @@ export function updateDocument(id: string, updates: Partial<Document>): void {
   if (updates.metadata !== undefined) {
     fields.push('metadata = ?');
     values.push(JSON.stringify(updates.metadata));
+  }
+  if (updates.summary !== undefined) {
+    fields.push('summary = ?');
+    values.push(updates.summary);
+  }
+  if (updates.tags !== undefined) {
+    fields.push('tags = ?');
+    values.push(JSON.stringify(updates.tags));
   }
 
   if (fields.length === 0) return;
@@ -244,6 +275,8 @@ interface DocumentRow {
   status: string;
   chunk_count: number;
   metadata: string;
+  summary: string | null;
+  tags: string;
 }
 
 function rowToDocument(row: DocumentRow): Document {
@@ -261,5 +294,7 @@ function rowToDocument(row: DocumentRow): Document {
     status: row.status as DocumentStatus,
     chunkCount: row.chunk_count,
     metadata: JSON.parse(row.metadata) as DocumentMetadata,
+    summary: row.summary ?? undefined,
+    tags: row.tags ? JSON.parse(row.tags) as string[] : undefined,
   };
 }

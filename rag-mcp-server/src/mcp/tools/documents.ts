@@ -16,7 +16,7 @@ export const indexDocumentSchema = z.object({
 export const listDocumentsSchema = z.object({
   status: z.enum(['pending', 'processing', 'indexed', 'failed']).optional()
     .describe('Filter by document status'),
-  fileType: z.enum(['txt', 'md', 'docx', 'pdf']).optional()
+  fileType: z.enum(['txt', 'md', 'docx', 'pdf', 'pptx', 'xlsx', 'csv', 'html', 'json', 'rtf']).optional()
     .describe('Filter by file type'),
 });
 
@@ -26,6 +26,12 @@ export const deleteDocumentSchema = z.object({
 
 export const getDocumentSchema = z.object({
   documentId: z.string().describe('Document ID to retrieve'),
+});
+
+export const indexTextSchema = z.object({
+  content: z.string().min(1).describe('Text content to index'),
+  title: z.string().min(1).describe('Title for the indexed content'),
+  metadata: z.record(z.unknown()).optional().describe('Optional metadata object'),
 });
 
 // Tool implementations
@@ -127,6 +133,39 @@ export async function getDocument(
     return {
       success: true,
       data: document,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export async function indexText(
+  params: z.infer<typeof indexTextSchema>
+): Promise<ToolResult<{ documentId: string; chunkCount: number }>> {
+  try {
+    const ingestionService = getIngestionService();
+    const result = await ingestionService.indexText(
+      params.content,
+      params.title,
+      params.metadata
+    );
+
+    if (result.status === 'failed') {
+      return {
+        success: false,
+        error: result.error ?? 'Failed to index text',
+      };
+    }
+
+    return {
+      success: true,
+      data: {
+        documentId: result.documentId,
+        chunkCount: result.chunkCount,
+      },
     };
   } catch (error) {
     return {

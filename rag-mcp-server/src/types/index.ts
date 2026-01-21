@@ -17,6 +17,8 @@ export interface Document {
   status: DocumentStatus;
   chunkCount: number;
   metadata: DocumentMetadata;
+  summary?: string;
+  tags?: string[];
 }
 
 export interface DocumentMetadata {
@@ -76,6 +78,8 @@ export interface SearchRequest {
   threshold?: number;
   filters?: SearchFilters;
   rerank?: boolean;
+  expand?: boolean;
+  hyde?: boolean;
 }
 
 // Reranking types
@@ -180,5 +184,12 @@ export interface Config {
     model: string;
     topN: number;
     candidateMultiplier: number;
+  };
+  llm: {
+    model: string;
+    queryExpansion: boolean;
+    autoSummary: boolean;
+    autoTags: boolean;
+    hyde: boolean;
   };
 }

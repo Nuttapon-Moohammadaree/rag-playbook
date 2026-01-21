@@ -69,6 +69,13 @@ export const config: Config = {
     topN: getEnvNumber('RERANK_TOP_N', 5),
     candidateMultiplier: getEnvNumber('RERANK_CANDIDATES', 4),
   },
+  llm: {
+    model: getEnv('LLM_MODEL', 'gpt-oss-120b'),
+    queryExpansion: getEnvBoolean('QUERY_EXPANSION', true),
+    autoSummary: getEnvBoolean('AUTO_SUMMARY', false),
+    autoTags: getEnvBoolean('AUTO_TAGS', false),
+    hyde: getEnvBoolean('HYDE_ENABLED', false),
+  },
 };
 
 export default config;

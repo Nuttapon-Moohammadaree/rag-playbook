@@ -11,6 +11,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { parseDocument, getFileType, getMimeType, isSupportedFile } from './parsers/index.js';
 import { getChunkingService } from '../chunking/service.js';
 import { getEmbeddingService } from '../embedding/service.js';
+import { getSummarizer } from '../llm/summarizer.js';
+import { getTagger } from '../llm/tagger.js';
+import { config } from '../../config/index.js';
 import {
   insertDocument,
   updateDocument,
@@ -165,11 +168,186 @@ export class IngestionService {
 
         await upsertVectors(vectorPoints);
 
+        // Generate LLM enhancements if enabled (non-blocking)
+        let summary: string | undefined;
+        let tags: string[] | undefined;
+
+        if (config.llm.autoSummary || config.llm.autoTags) {
+          const docTitle = parsed.metadata?.title ?? filename;
+          const contentSample = parsed.content.substring(0, 10000);
+
+          // Generate summary and tags in parallel
+          const [summaryResult, tagsResult] = await Promise.allSettled([
+            config.llm.autoSummary
+              ? getSummarizer().generateBriefSummary(contentSample)
+              : Promise.resolve(undefined),
+            config.llm.autoTags
+              ? getTagger().generateTags(contentSample, docTitle)
+              : Promise.resolve(undefined),
+          ]);
+
+          if (summaryResult.status === 'fulfilled' && summaryResult.value) {
+            summary = summaryResult.value;
+          }
+          if (tagsResult.status === 'fulfilled' && tagsResult.value) {
+            tags = tagsResult.value;
+          }
+        }
+
         // Update document status
         updateDocument(documentId, {
           status: 'indexed',
           chunkCount: chunks.length,
           indexedAt: new Date(),
+          summary,
+          tags,
+        });
+
+        return {
+          documentId,
+          filename,
+          status: 'success',
+          chunkCount: chunks.length,
+        };
+      } catch (error) {
+        // Mark document as failed
+        updateDocument(documentId, {
+          status: 'failed',
+          metadata: {
+            ...document.metadata,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
+        throw error;
+      }
+    } catch (error) {
+      return {
+        documentId: '',
+        filename,
+        status: 'failed',
+        chunkCount: 0,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  /**
+   * Index raw text content without a file
+   */
+  async indexText(
+    content: string,
+    title: string,
+    metadata: Record<string, unknown> = {}
+  ): Promise<IngestionResult> {
+    await this.initialize();
+
+    const documentId = uuidv4();
+    const filename = `${title}.txt`;
+    const filepath = `memory://${documentId}`;
+
+    try {
+      if (!content || content.trim().length === 0) {
+        throw new Error('Content cannot be empty');
+      }
+
+      // Create document record
+      const document: Omit<Document, 'createdAt' | 'updatedAt'> = {
+        id: documentId,
+        filename,
+        filepath,
+        fileType: 'txt' as FileType,
+        fileSize: Buffer.byteLength(content, 'utf8'),
+        mimeType: 'text/plain',
+        checksum: createHash('sha256').update(content).digest('hex'),
+        status: 'processing',
+        chunkCount: 0,
+        indexedAt: null,
+        metadata: {
+          title,
+          source: 'text',
+          ...metadata,
+        },
+      };
+
+      insertDocument(document);
+
+      try {
+        // Chunk content
+        const chunks = this.chunkingService.chunk(content, {});
+
+        if (chunks.length === 0) {
+          throw new Error('No content to index');
+        }
+
+        // Prepare chunk data
+        const chunkData = chunks.map((chunk, index) => ({
+          id: uuidv4(),
+          documentId,
+          content: chunk.content,
+          chunkIndex: index,
+          startOffset: chunk.startOffset,
+          endOffset: chunk.endOffset,
+          tokenCount: chunk.tokenCount,
+          metadata: chunk.metadata,
+        }));
+
+        // Generate embeddings
+        const texts = chunkData.map(c => c.content);
+        const embeddingResponse = await this.embeddingService.embed(texts);
+
+        // Store chunks in SQLite
+        insertChunks(chunkData);
+
+        // Store vectors in Qdrant
+        const vectorPoints = chunkData.map((chunk, index) => ({
+          id: chunk.id,
+          vector: embeddingResponse.embeddings[index],
+          payload: {
+            chunk_id: chunk.id,
+            document_id: documentId,
+            content: chunk.content,
+            chunk_index: chunk.chunkIndex,
+            filename,
+            filepath,
+            file_type: 'txt',
+            metadata: chunk.metadata,
+          },
+        }));
+
+        await upsertVectors(vectorPoints);
+
+        // Generate LLM enhancements if enabled (non-blocking)
+        let summary: string | undefined;
+        let tags: string[] | undefined;
+
+        if (config.llm.autoSummary || config.llm.autoTags) {
+          const contentSample = content.substring(0, 10000);
+
+          // Generate summary and tags in parallel
+          const [summaryResult, tagsResult] = await Promise.allSettled([
+            config.llm.autoSummary
+              ? getSummarizer().generateBriefSummary(contentSample)
+              : Promise.resolve(undefined),
+            config.llm.autoTags
+              ? getTagger().generateTags(contentSample, title)
+              : Promise.resolve(undefined),
+          ]);
+
+          if (summaryResult.status === 'fulfilled' && summaryResult.value) {
+            summary = summaryResult.value;
+          }
+          if (tagsResult.status === 'fulfilled' && tagsResult.value) {
+            tags = tagsResult.value;
+          }
+        }
+
+        // Update document status
+        updateDocument(documentId, {
+          status: 'indexed',
+          chunkCount: chunks.length,
+          indexedAt: new Date(),
+          summary,
+          tags,
         });
 
         return {

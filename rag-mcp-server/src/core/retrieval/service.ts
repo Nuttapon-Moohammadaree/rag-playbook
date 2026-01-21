@@ -1,9 +1,11 @@
 /**
- * Retrieval service - vector search with optional reranking
+ * Retrieval service - vector search with optional reranking and query expansion
  */
 
 import { getEmbeddingService } from '../embedding/service.js';
 import { getRerankingService } from '../reranking/service.js';
+import { getQueryEnhancer } from '../llm/query-enhancer.js';
+import { getHyDE } from '../llm/hyde.js';
 import { searchVectors, ensureCollection } from '../../storage/qdrant.js';
 import { config } from '../../config/index.js';
 import type { SearchRequest, SearchResult, SearchFilters } from '../../types/index.js';
@@ -11,6 +13,8 @@ import type { SearchRequest, SearchResult, SearchFilters } from '../../types/ind
 export class RetrievalService {
   private embeddingService = getEmbeddingService();
   private rerankingService = getRerankingService();
+  private queryEnhancer = getQueryEnhancer(config.llm.queryExpansion);
+  private hyde = getHyDE(config.llm.hyde);
   private initialized = false;
 
   /**
@@ -23,7 +27,7 @@ export class RetrievalService {
   }
 
   /**
-   * Search for relevant chunks with optional reranking
+   * Search for relevant chunks with optional reranking and query expansion
    */
   async search(request: SearchRequest): Promise<SearchResult[]> {
     await this.initialize();
@@ -34,10 +38,29 @@ export class RetrievalService {
       threshold = config.search.defaultThreshold,
       filters,
       rerank,
+      expand,
+      hyde,
     } = request;
 
     if (!query || query.trim().length === 0) {
       return [];
+    }
+
+    // Determine if HyDE should be used
+    const useHyDE = hyde ?? this.hyde.shouldUseHyDE(query);
+
+    // Determine if query expansion should be used (skip if using HyDE)
+    const useExpand = !useHyDE && (expand ?? this.queryEnhancer.isEnabled());
+
+    // Apply query transformations
+    let searchQuery = query;
+
+    if (useHyDE) {
+      // Generate hypothetical document for complex queries
+      searchQuery = await this.hyde.generateHypotheticalDocument(query);
+    } else if (useExpand) {
+      // Expand query with related terms
+      searchQuery = await this.queryEnhancer.expand(query);
     }
 
     // Determine if reranking should be used
@@ -48,8 +71,8 @@ export class RetrievalService {
       ? limit * this.rerankingService.getCandidateMultiplier()
       : limit;
 
-    // Generate query embedding
-    const queryEmbedding = await this.embeddingService.embedSingle(query);
+    // Generate query embedding (use expanded query for embedding)
+    const queryEmbedding = await this.embeddingService.embedSingle(searchQuery);
 
     // Search vectors with expanded limit for reranking candidates
     const candidates = await searchVectors(queryEmbedding, candidateLimit, threshold, filters);

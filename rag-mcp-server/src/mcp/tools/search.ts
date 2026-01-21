@@ -14,6 +14,8 @@ export const searchSchema = z.object({
   documentIds: z.array(z.string()).optional().describe('Filter by specific document IDs'),
   fileTypes: z.array(z.enum(['txt', 'md', 'docx', 'pdf', 'pptx', 'xlsx', 'csv', 'html', 'json', 'rtf'])).optional().describe('Filter by file types'),
   rerank: z.boolean().optional().describe('Enable reranking with cross-encoder (default: true)'),
+  expand: z.boolean().optional().describe('Enable query expansion with LLM (default: true)'),
+  hyde: z.boolean().optional().describe('Enable HyDE (Hypothetical Document Embedding) for complex queries (default: auto-detect)'),
 });
 
 // Tool implementation
@@ -32,6 +34,8 @@ export async function search(
         fileTypes: params.fileTypes,
       },
       rerank: params.rerank,
+      expand: params.expand,
+      hyde: params.hyde,
     });
 
     const items: SearchResultItem[] = results.map(r => ({

@@ -12,9 +12,12 @@ import {
   deleteDocumentSchema,
   getDocument,
   getDocumentSchema,
+  indexText,
+  indexTextSchema,
 } from './documents.js';
 import { search, searchSchema } from './search.js';
 import { ask, askSchema } from './ask.js';
+import { summarizeDocument, summarizeDocumentSchema } from './llm.js';
 import type { ToolResult } from '../../types/index.js';
 
 // Tool definitions for MCP
@@ -51,6 +54,12 @@ export const tools: ToolDefinition[] = [
     handler: async (params) => getDocument(params as z.infer<typeof getDocumentSchema>),
   },
   {
+    name: 'index_text',
+    description: 'Index raw text content for semantic search without needing a file. Useful for indexing notes, API responses, or dynamically generated content.',
+    inputSchema: indexTextSchema,
+    handler: async (params) => indexText(params as z.infer<typeof indexTextSchema>),
+  },
+  {
     name: 'search',
     description: 'Search for relevant document chunks using semantic similarity. Returns chunks ranked by relevance score.',
     inputSchema: searchSchema,
@@ -61,6 +70,12 @@ export const tools: ToolDefinition[] = [
     description: 'Ask a question and get an answer based on indexed documents using RAG (Retrieval Augmented Generation). Returns the answer along with source citations.',
     inputSchema: askSchema,
     handler: async (params) => ask(params as z.infer<typeof askSchema>),
+  },
+  {
+    name: 'summarize_document',
+    description: 'Generate a summary of an indexed document using LLM. Supports different styles: brief (2-3 sentences), detailed (comprehensive), or bullet_points (list format).',
+    inputSchema: summarizeDocumentSchema,
+    handler: async (params) => summarizeDocument(params as z.infer<typeof summarizeDocumentSchema>),
   },
 ];
 
