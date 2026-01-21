@@ -45,11 +45,14 @@ export class EmbeddingService {
    */
   async embedSingle(text: string): Promise<number[]> {
     const response = await this.embed([text]);
+    if (!response.embeddings || response.embeddings.length === 0) {
+      throw new Error('Embedding API returned empty embeddings array');
+    }
     return response.embeddings[0];
   }
 
   /**
-   * Process texts in batches
+   * Process texts in batches (parallel processing)
    */
   private async embedBatched(texts: string[]): Promise<EmbeddingResponse> {
     const batches: string[][] = [];
@@ -57,13 +60,12 @@ export class EmbeddingService {
       batches.push(texts.slice(i, i + BATCH_SIZE));
     }
 
-    const results: EmbeddingResponse[] = [];
-    for (const batch of batches) {
-      const result = await this.embedBatch(batch);
-      results.push(result);
-    }
+    // Process all batches in parallel for better performance
+    const results = await Promise.all(
+      batches.map(batch => this.embedBatch(batch))
+    );
 
-    // Combine results
+    // Combine results in order
     const allEmbeddings = results.flatMap(r => r.embeddings);
     const totalUsage = results.reduce(
       (acc, r) => ({

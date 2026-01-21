@@ -56,7 +56,8 @@ export class HyDE {
 
     const sanitizedQuery = this.sanitizeQuery(query);
     if (sanitizedQuery.length === 0) {
-      return query;
+      // Return empty string if query was entirely filtered out (potential injection)
+      return '';
     }
 
     // Check cache first
@@ -87,8 +88,9 @@ Write a detailed passage that would answer this question:`;
 
       return sanitizedQuery;
     } catch (error) {
+      // On error, return sanitized query (graceful degradation, maintain security)
       console.error('HyDE generation failed:', error);
-      return query;
+      return sanitizedQuery;
     }
   }
 

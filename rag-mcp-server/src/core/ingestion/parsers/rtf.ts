@@ -3,13 +3,23 @@
  * Strips RTF formatting and extracts plain text
  */
 
-import { readFile } from 'fs/promises';
+import { readFile, stat } from 'fs/promises';
 import type { ParsedDocument, ParsedSection } from '../../../types/index.js';
+
+// RTF-specific limits (more conservative than general parser limit)
+const RTF_MAX_SIZE_MB = 50; // RTF parsing is memory-intensive
 
 /**
  * Parse RTF file and extract plain text
  */
 export async function parseRtfFile(filepath: string): Promise<ParsedDocument> {
+  // Check file size before loading (RTF parsing is memory-intensive)
+  const fileStat = await stat(filepath);
+  const fileSizeMB = fileStat.size / (1024 * 1024);
+  if (fileSizeMB > RTF_MAX_SIZE_MB) {
+    throw new Error(`RTF file too large: ${fileSizeMB.toFixed(1)}MB exceeds ${RTF_MAX_SIZE_MB}MB limit`);
+  }
+
   const raw = await readFile(filepath, 'utf-8');
 
   // Extract plain text from RTF

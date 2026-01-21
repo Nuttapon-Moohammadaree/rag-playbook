@@ -75,8 +75,13 @@ export class AskService {
     });
 
     if (searchResults.length === 0) {
+      // Detect if query contains Thai characters for bilingual response
+      const hasThai = /[\u0E00-\u0E7F]/.test(question);
+      const noResultsMessage = hasThai
+        ? 'ไม่พบข้อมูลที่เกี่ยวข้องในฐานข้อมูล กรุณาลองถามคำถามอื่น หรือตรวจสอบว่าได้ index เอกสารที่เกี่ยวข้องแล้ว'
+        : 'No relevant information found in the database. Please try a different question or ensure the relevant documents have been indexed.';
       return {
-        answer: 'ไม่พบข้อมูลที่เกี่ยวข้องในฐานข้อมูล กรุณาลองถามคำถามอื่น หรือตรวจสอบว่าได้ index เอกสารที่เกี่ยวข้องแล้ว',
+        answer: noResultsMessage,
         sources: [],
         model,
       };
@@ -93,7 +98,7 @@ export class AskService {
       sources: searchResults.map(r => ({
         filename: r.document.filename,
         filepath: r.document.filepath,
-        content: r.content.substring(0, 200) + '...',
+        content: (r.content?.substring(0, 200) ?? '') + '...',
         score: Math.round(r.score * 1000) / 1000,
       })),
       model,
@@ -151,7 +156,18 @@ Please answer the question based on the context above.`;
     }
 
     const data = await response.json() as LLMResponse;
-    const answer = data.choices[0]?.message?.content ?? 'ไม่สามารถสร้างคำตอบได้';
+
+    // Validate LLM response structure
+    if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
+      throw new Error('LLM API returned invalid response: missing or empty choices array');
+    }
+
+    const firstChoice = data.choices[0];
+    if (!firstChoice?.message?.content) {
+      throw new Error('LLM API returned invalid response: missing message content');
+    }
+
+    const answer = firstChoice.message.content;
 
     return {
       answer,

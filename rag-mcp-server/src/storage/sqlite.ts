@@ -97,6 +97,38 @@ export function closeDatabase(): void {
   }
 }
 
+/**
+ * Execute a function within a database transaction
+ * Rolls back on error and re-throws
+ */
+export function withTransaction<T>(fn: () => T): T {
+  const database = getDatabase();
+  const transaction = database.transaction(fn);
+  return transaction();
+}
+
+/**
+ * Get documents by multiple paths in a single query (batch query)
+ * Returns a Map of filepath -> Document for quick lookup
+ */
+export function getDocumentsByPaths(filepaths: string[]): Map<string, Document> {
+  if (filepaths.length === 0) {
+    return new Map();
+  }
+
+  const database = getDatabase();
+  const placeholders = filepaths.map(() => '?').join(', ');
+  const rows = database.prepare(
+    `SELECT * FROM documents WHERE filepath IN (${placeholders})`
+  ).all(...filepaths) as DocumentRow[];
+
+  const result = new Map<string, Document>();
+  for (const row of rows) {
+    result.set(row.filepath, rowToDocument(row));
+  }
+  return result;
+}
+
 // Document operations
 export function insertDocument(doc: Omit<Document, 'createdAt' | 'updatedAt'>): Document {
   const database = getDatabase();

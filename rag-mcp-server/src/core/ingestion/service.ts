@@ -3,9 +3,9 @@
  */
 
 import { stat } from 'fs/promises';
+import { createReadStream } from 'fs';
 import { basename } from 'path';
 import { createHash } from 'crypto';
-import { readFile } from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 
 import { parseDocument, getFileType, getMimeType, isSupportedFile } from './parsers/index.js';
@@ -21,6 +21,7 @@ import {
   deleteDocument as deleteDocumentFromDb,
   insertChunks,
   deleteChunksByDocumentId,
+  withTransaction,
 } from '../../storage/sqlite.js';
 import {
   ensureCollection,
@@ -70,45 +71,67 @@ export class IngestionService {
         throw new Error(`Not a file: ${filepath}`);
       }
 
-      // Check if already indexed
-      const existing = getDocumentByPath(filepath);
-      if (existing && !options.forceReindex) {
-        // Check if file has changed
-        const newChecksum = await this.computeChecksum(filepath);
-        if (existing.checksum === newChecksum) {
-          return {
-            documentId: existing.id,
-            filename,
-            status: 'success',
-            chunkCount: existing.chunkCount,
-          };
-        }
-        // File changed, reindex
-        await this.deleteDocument(existing.id);
-      } else if (existing && options.forceReindex) {
-        await this.deleteDocument(existing.id);
-      }
-
-      // Create document record
-      const fileType = getFileType(filepath)!;
+      // Compute checksum first (needed for comparison and new record)
       const checksum = await this.computeChecksum(filepath);
+      const fileType = getFileType(filepath)!;
       const documentId = uuidv4();
 
-      const document: Omit<Document, 'createdAt' | 'updatedAt'> = {
-        id: documentId,
-        filename,
-        filepath,
-        fileType,
-        fileSize: fileStat.size,
-        mimeType: getMimeType(fileType),
-        checksum,
-        status: 'processing',
-        chunkCount: 0,
-        indexedAt: null,
-        metadata: {},
-      };
+      // Use transaction to atomically check and create document record
+      // This prevents race conditions with concurrent indexing of the same file
+      const transactionResult = withTransaction(() => {
+        // Check if already indexed (inside transaction for atomicity)
+        const existing = getDocumentByPath(filepath);
 
-      insertDocument(document);
+        if (existing && !options.forceReindex) {
+          // Check if file has changed
+          if (existing.checksum === checksum) {
+            return {
+              type: 'existing' as const,
+              documentId: existing.id,
+              chunkCount: existing.chunkCount,
+            };
+          }
+          // File changed, mark for reindex (delete outside transaction due to async)
+          return { type: 'reindex' as const, existingId: existing.id };
+        } else if (existing && options.forceReindex) {
+          return { type: 'reindex' as const, existingId: existing.id };
+        }
+
+        // Create new document record
+        const document: Omit<Document, 'createdAt' | 'updatedAt'> = {
+          id: documentId,
+          filename,
+          filepath,
+          fileType,
+          fileSize: fileStat.size,
+          mimeType: getMimeType(fileType),
+          checksum,
+          status: 'processing',
+          chunkCount: 0,
+          indexedAt: null,
+          metadata: {},
+        };
+
+        insertDocument(document);
+        return { type: 'new' as const, documentId };
+      });
+
+      // Handle transaction result
+      if (transactionResult.type === 'existing') {
+        return {
+          documentId: transactionResult.documentId,
+          filename,
+          status: 'success',
+          chunkCount: transactionResult.chunkCount,
+        };
+      }
+
+      if (transactionResult.type === 'reindex') {
+        // Delete old document (async operations must be outside transaction)
+        await this.deleteDocument(transactionResult.existingId);
+        // Re-run indexing with the cleaned state
+        return this.indexDocument(filepath, { ...options, forceReindex: false });
+      }
 
       try {
         // Parse document
@@ -117,7 +140,7 @@ export class IngestionService {
         // Update metadata from parsed content
         if (parsed.metadata) {
           updateDocument(documentId, {
-            metadata: { ...document.metadata, ...parsed.metadata },
+            metadata: parsed.metadata,
           });
         }
 
@@ -147,24 +170,37 @@ export class IngestionService {
         const texts = chunkData.map(c => c.content);
         const embeddingResponse = await this.embeddingService.embed(texts);
 
+        // Validate embeddings array length matches chunks
+        if (embeddingResponse.embeddings.length !== chunkData.length) {
+          throw new Error(
+            `Embedding count mismatch: expected ${chunkData.length}, got ${embeddingResponse.embeddings.length}`
+          );
+        }
+
         // Store chunks in SQLite
         insertChunks(chunkData);
 
         // Store vectors in Qdrant
-        const vectorPoints = chunkData.map((chunk, index) => ({
-          id: chunk.id,
-          vector: embeddingResponse.embeddings[index],
-          payload: {
-            chunk_id: chunk.id,
-            document_id: documentId,
-            content: chunk.content,
-            chunk_index: chunk.chunkIndex,
-            filename,
-            filepath,
-            file_type: fileType,
-            metadata: chunk.metadata,
-          },
-        }));
+        const vectorPoints = chunkData.map((chunk, index) => {
+          const vector = embeddingResponse.embeddings[index];
+          if (!vector) {
+            throw new Error(`Missing embedding for chunk index ${index}`);
+          }
+          return {
+            id: chunk.id,
+            vector,
+            payload: {
+              chunk_id: chunk.id,
+              document_id: documentId,
+              content: chunk.content,
+              chunk_index: chunk.chunkIndex,
+              filename,
+              filepath,
+              file_type: fileType,
+              metadata: chunk.metadata,
+            },
+          };
+        });
 
         await upsertVectors(vectorPoints);
 
@@ -214,7 +250,6 @@ export class IngestionService {
         updateDocument(documentId, {
           status: 'failed',
           metadata: {
-            ...document.metadata,
             error: error instanceof Error ? error.message : String(error),
           },
         });
@@ -295,24 +330,37 @@ export class IngestionService {
         const texts = chunkData.map(c => c.content);
         const embeddingResponse = await this.embeddingService.embed(texts);
 
+        // Validate embeddings array length matches chunks
+        if (embeddingResponse.embeddings.length !== chunkData.length) {
+          throw new Error(
+            `Embedding count mismatch: expected ${chunkData.length}, got ${embeddingResponse.embeddings.length}`
+          );
+        }
+
         // Store chunks in SQLite
         insertChunks(chunkData);
 
         // Store vectors in Qdrant
-        const vectorPoints = chunkData.map((chunk, index) => ({
-          id: chunk.id,
-          vector: embeddingResponse.embeddings[index],
-          payload: {
-            chunk_id: chunk.id,
-            document_id: documentId,
-            content: chunk.content,
-            chunk_index: chunk.chunkIndex,
-            filename,
-            filepath,
-            file_type: 'txt',
-            metadata: chunk.metadata,
-          },
-        }));
+        const vectorPoints = chunkData.map((chunk, index) => {
+          const vector = embeddingResponse.embeddings[index];
+          if (!vector) {
+            throw new Error(`Missing embedding for chunk index ${index}`);
+          }
+          return {
+            id: chunk.id,
+            vector,
+            payload: {
+              chunk_id: chunk.id,
+              document_id: documentId,
+              content: chunk.content,
+              chunk_index: chunk.chunkIndex,
+              filename,
+              filepath,
+              file_type: 'txt',
+              metadata: chunk.metadata,
+            },
+          };
+        });
 
         await upsertVectors(vectorPoints);
 
@@ -395,11 +443,17 @@ export class IngestionService {
   }
 
   /**
-   * Compute file checksum
+   * Compute file checksum using streaming to avoid loading entire file into memory
    */
-  private async computeChecksum(filepath: string): Promise<string> {
-    const content = await readFile(filepath);
-    return createHash('sha256').update(content).digest('hex');
+  private computeChecksum(filepath: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const hash = createHash('sha256');
+      const stream = createReadStream(filepath);
+
+      stream.on('data', (chunk) => hash.update(chunk));
+      stream.on('end', () => resolve(hash.digest('hex')));
+      stream.on('error', (err) => reject(err));
+    });
   }
 }
 

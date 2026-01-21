@@ -26,11 +26,11 @@ export class RerankingService {
       return [];
     }
 
-    // If documents <= topN, no need to rerank
+    // If documents <= topN, no need to rerank - return with score indicating skipped
     if (documents.length <= topN) {
       return documents.map((_, index) => ({
         index,
-        relevanceScore: 1.0, // Placeholder score
+        relevanceScore: -1, // Negative indicates reranking was skipped (not needed)
       }));
     }
 
@@ -63,11 +63,12 @@ export class RerankingService {
         relevanceScore: r.relevance_score,
       }));
     } catch (error) {
-      // On error, return original order with placeholder scores
+      // On error, return original order with -1 score to indicate reranking failed
+      // Consumers should check for negative scores to know reranking didn't happen
       console.error('Reranking failed, using original order:', error);
       return documents.slice(0, topN).map((_, index) => ({
         index,
-        relevanceScore: 1.0 - (index * 0.01), // Decreasing scores
+        relevanceScore: -1, // Negative indicates fallback (no actual reranking)
       }));
     }
   }

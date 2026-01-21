@@ -1,6 +1,7 @@
 /**
  * CSV file parser
  * Converts tabular data to searchable text format
+ * Properly handles quoted fields with embedded newlines and commas
  */
 
 import { readFile } from 'fs/promises';
@@ -11,24 +12,26 @@ import type { ParsedDocument, ParsedSection } from '../../../types/index.js';
  */
 export async function parseCsvFile(filepath: string): Promise<ParsedDocument> {
   const raw = await readFile(filepath, 'utf-8');
-  const lines = raw.split(/\r?\n/).filter(line => line.trim());
 
-  if (lines.length === 0) {
+  // Parse all rows properly handling quoted fields with newlines
+  const rows = parseCSVContent(raw);
+
+  if (rows.length === 0) {
     return {
       content: '',
       metadata: { source: filepath },
     };
   }
 
-  // Parse header row
-  const headers = parseCSVLine(lines[0]);
+  // First row is header
+  const headers = rows[0];
 
   // Parse data rows and convert to text format
   const textRows: string[] = [];
   const sections: ParsedSection[] = [];
 
-  for (let i = 1; i < lines.length; i++) {
-    const values = parseCSVLine(lines[i]);
+  for (let i = 1; i < rows.length; i++) {
+    const values = rows[i];
     const rowText = headers
       .map((header, idx) => `${header}: ${values[idx] ?? ''}`)
       .join('\n');
@@ -49,51 +52,80 @@ export async function parseCsvFile(filepath: string): Promise<ParsedDocument> {
     metadata: {
       source: filepath,
       columns: headers,
-      rowCount: lines.length - 1,
+      rowCount: rows.length - 1,
     },
     sections,
   };
 }
 
 /**
- * Parse a single CSV line, handling quoted fields
+ * Parse entire CSV content, properly handling quoted fields with newlines
  */
-function parseCSVLine(line: string): string[] {
-  const result: string[] = [];
-  let current = '';
+function parseCSVContent(content: string): string[][] {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentField = '';
   let inQuotes = false;
+  let i = 0;
 
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    const nextChar = line[i + 1];
+  while (i < content.length) {
+    const char = content[i];
+    const nextChar = content[i + 1];
 
     if (inQuotes) {
       if (char === '"' && nextChar === '"') {
-        // Escaped quote
-        current += '"';
-        i++;
+        // Escaped quote ("") -> single quote
+        currentField += '"';
+        i += 2;
       } else if (char === '"') {
         // End of quoted field
         inQuotes = false;
+        i++;
       } else {
-        current += char;
+        // Any character inside quotes (including newlines)
+        currentField += char;
+        i++;
       }
     } else {
       if (char === '"') {
         // Start of quoted field
         inQuotes = true;
+        i++;
       } else if (char === ',') {
         // Field separator
-        result.push(current.trim());
-        current = '';
+        currentRow.push(currentField.trim());
+        currentField = '';
+        i++;
+      } else if (char === '\r' && nextChar === '\n') {
+        // Windows line ending
+        currentRow.push(currentField.trim());
+        if (currentRow.length > 0 && currentRow.some(f => f.length > 0)) {
+          rows.push(currentRow);
+        }
+        currentRow = [];
+        currentField = '';
+        i += 2;
+      } else if (char === '\n') {
+        // Unix line ending
+        currentRow.push(currentField.trim());
+        if (currentRow.length > 0 && currentRow.some(f => f.length > 0)) {
+          rows.push(currentRow);
+        }
+        currentRow = [];
+        currentField = '';
+        i++;
       } else {
-        current += char;
+        currentField += char;
+        i++;
       }
     }
   }
 
-  // Don't forget the last field
-  result.push(current.trim());
+  // Don't forget the last field and row
+  currentRow.push(currentField.trim());
+  if (currentRow.length > 0 && currentRow.some(f => f.length > 0)) {
+    rows.push(currentRow);
+  }
 
-  return result;
+  return rows;
 }

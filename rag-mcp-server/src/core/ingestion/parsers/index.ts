@@ -3,6 +3,7 @@
  */
 
 import { extname } from 'path';
+import { stat } from 'fs/promises';
 import { parseTextFile, parseMarkdownFile } from './text.js';
 import { parseDocxFile } from './docx.js';
 import { parsePdfFile } from './pdf.js';
@@ -13,6 +14,33 @@ import { parseJsonFile } from './json.js';
 import { parseRtfFile } from './rtf.js';
 import { parseHtmlFile } from './html.js';
 import type { ParsedDocument, FileType } from '../../../types/index.js';
+
+// Parser configuration
+const PARSER_TIMEOUT_MS = 60000; // 60 second timeout per file
+const MAX_FILE_SIZE_MB = 100; // 100MB max file size
+
+/**
+ * Wrap a parser function with timeout protection
+ */
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  filepath: string
+): Promise<T> {
+  let timeoutId: NodeJS.Timeout;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`Parser timeout after ${timeoutMs}ms for file: ${filepath}`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutId!);
+  }
+}
 
 /**
  * Supported file extensions and their types
@@ -80,6 +108,7 @@ export function getSupportedExtensions(): string[] {
 
 /**
  * Parse a document based on its file type
+ * Includes timeout protection and file size validation
  */
 export async function parseDocument(filepath: string): Promise<ParsedDocument> {
   const fileType = getFileType(filepath);
@@ -88,30 +117,53 @@ export async function parseDocument(filepath: string): Promise<ParsedDocument> {
     throw new Error(`Unsupported file type: ${extname(filepath)}`);
   }
 
+  // Check file size before parsing
+  const fileStat = await stat(filepath);
+  const fileSizeMB = fileStat.size / (1024 * 1024);
+  if (fileSizeMB > MAX_FILE_SIZE_MB) {
+    throw new Error(`File too large: ${fileSizeMB.toFixed(1)}MB exceeds ${MAX_FILE_SIZE_MB}MB limit`);
+  }
+
+  // Get the parser promise based on file type
+  let parserPromise: Promise<ParsedDocument>;
+
   switch (fileType) {
     case 'txt':
-      return parseTextFile(filepath);
+      parserPromise = parseTextFile(filepath);
+      break;
     case 'md':
-      return parseMarkdownFile(filepath);
+      parserPromise = parseMarkdownFile(filepath);
+      break;
     case 'docx':
-      return parseDocxFile(filepath);
+      parserPromise = parseDocxFile(filepath);
+      break;
     case 'pdf':
-      return parsePdfFile(filepath);
+      parserPromise = parsePdfFile(filepath);
+      break;
     case 'pptx':
-      return parsePptxFile(filepath);
+      parserPromise = parsePptxFile(filepath);
+      break;
     case 'xlsx':
-      return parseXlsxFile(filepath);
+      parserPromise = parseXlsxFile(filepath);
+      break;
     case 'csv':
-      return parseCsvFile(filepath);
+      parserPromise = parseCsvFile(filepath);
+      break;
     case 'json':
-      return parseJsonFile(filepath);
+      parserPromise = parseJsonFile(filepath);
+      break;
     case 'rtf':
-      return parseRtfFile(filepath);
+      parserPromise = parseRtfFile(filepath);
+      break;
     case 'html':
-      return parseHtmlFile(filepath);
+      parserPromise = parseHtmlFile(filepath);
+      break;
     default:
       throw new Error(`Parser not implemented for file type: ${fileType}`);
   }
+
+  // Wrap with timeout protection
+  return withTimeout(parserPromise, PARSER_TIMEOUT_MS, filepath);
 }
 
 export {

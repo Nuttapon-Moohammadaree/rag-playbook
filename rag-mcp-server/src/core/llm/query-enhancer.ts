@@ -64,7 +64,8 @@ export class QueryEnhancer {
     // Sanitize input
     const sanitizedQuery = this.sanitizeQuery(query);
     if (sanitizedQuery.length === 0) {
-      return query;
+      // Return empty string if query was entirely filtered out (potential injection)
+      return '';
     }
 
     // Skip expansion if query is already long enough
@@ -96,9 +97,9 @@ export class QueryEnhancer {
 
       return sanitizedQuery;
     } catch (error) {
-      // On error, return original query (graceful degradation)
+      // On error, return sanitized query (graceful degradation, maintain security)
       console.error('Query expansion failed:', error);
-      return query;
+      return sanitizedQuery;
     }
   }
 
