@@ -7,18 +7,20 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #1268 | 3:25 PM | ⚖️ | Project cleanup and commit strategy defined | ~330 |
-| #1222 | 3:02 PM | 🔴 | Fixed Docker Health Check IPv6 Resolution Issue | ~275 |
-| #1220 | " | 🔴 | Fixed API Healthcheck Using 127.0.0.1 Instead of localhost | ~291 |
-| #1214 | 3:01 PM | ✅ | Committed Docker Compose Migration to External LiteLLM Service | ~362 |
-| #1201 | 2:57 PM | 🔵 | Default LiteLLM Environment Variables Still Reference Local Service | ~309 |
-| #1200 | " | ✅ | Removed Deprecated Docker Compose Version Declaration | ~220 |
-| #1198 | " | ✅ | Removed LiteLLM Dependency from API Service | ~239 |
-| #1197 | " | ✅ | Removed Local LiteLLM Container from Docker Compose | ~286 |
-| #1194 | 2:56 PM | 🔵 | Current Docker Compose Configuration with Local LiteLLM Service | ~302 |
-| #959 | 12:17 PM | ✅ | Created Nginx configuration for SPA and API proxying | ~326 |
-| #958 | " | ✅ | Created multi-stage Dockerfile for web UI | ~269 |
-| #957 | " | ✅ | Created multi-stage Dockerfile for REST API | ~307 |
-| #956 | 12:16 PM | ✅ | Created LiteLLM proxy configuration | ~337 |
-| #955 | " | 🟣 | Created full-stack Docker Compose configuration | ~372 |
+| #1113 | 1:59 PM | 🔴 | Dockerfile Modified to Rebuild Native Modules in Production Stage | ~343 |
+| #1112 | " | 🔵 | Dockerfile Uses Node Alpine Copying Pre-Built Native Modules | ~365 |
+| #1103 | 1:55 PM | ✅ | Added Environment Variable Passthrough for Embedding Configuration | ~331 |
+| #1100 | 1:54 PM | 🔵 | LiteLLM Configuration Missing Database Settings | ~344 |
+| #1088 | 1:52 PM | ✅ | Removed Health Check Dependency from Web Service | ~326 |
+| #1087 | " | ✅ | Removed Health Check Dependency Conditions from API Service | ~329 |
+| #1086 | " | ✅ | Simplified Qdrant Health Check to Use Native Binary Version Command | ~326 |
+| #1083 | 1:51 PM | 🔴 | Qdrant Health Check Changed to TCP Port Test Using Bash Built-in | ~114 |
+| #1078 | 1:49 PM | ✅ | Updated API Service Health Check with Consistent Configuration | ~318 |
+| #1077 | " | 🔴 | Fixed Health Check Endpoints and Timings for Qdrant and LiteLLM | ~393 |
+| #1076 | " | 🔵 | Docker Compose Full Stack Configuration with Service Dependencies | ~397 |
+| #1075 | 1:45 PM | 🔴 | Fixed Docker CMD Path to Match Actual TypeScript Build Output | ~285 |
+| #1059 | 1:37 PM | ✅ | Web Dockerfile Modified to Use npm install with --ignore-engines | ~261 |
+| #1058 | " | 🔵 | Web UI Docker Image Uses Node Build with Nginx Serving | ~301 |
+| #1057 | " | ✅ | API Dockerfile Modified to Use npm install with --ignore-engines | ~324 |
+| #1056 | " | 🔵 | API Docker Image Uses Node 22 Multi-Stage Build | ~311 |
 </claude-mem-context>
