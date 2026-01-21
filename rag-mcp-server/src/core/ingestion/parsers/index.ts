@@ -8,6 +8,10 @@ import { parseDocxFile } from './docx.js';
 import { parsePdfFile } from './pdf.js';
 import { parsePptxFile } from './pptx.js';
 import { parseXlsxFile } from './xlsx.js';
+import { parseCsvFile } from './csv.js';
+import { parseJsonFile } from './json.js';
+import { parseRtfFile } from './rtf.js';
+import { parseHtmlFile } from './html.js';
 import type { ParsedDocument, FileType } from '../../../types/index.js';
 
 /**
@@ -22,6 +26,11 @@ const FILE_TYPE_MAP: Record<string, FileType> = {
   '.pptx': 'pptx',
   '.xlsx': 'xlsx',
   '.xls': 'xlsx',
+  '.csv': 'csv',
+  '.html': 'html',
+  '.htm': 'html',
+  '.json': 'json',
+  '.rtf': 'rtf',
 };
 
 /**
@@ -34,6 +43,10 @@ const MIME_TYPE_MAP: Record<FileType, string> = {
   pdf: 'application/pdf',
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  csv: 'text/csv',
+  html: 'text/html',
+  json: 'application/json',
+  rtf: 'application/rtf',
 };
 
 /**
@@ -88,9 +101,28 @@ export async function parseDocument(filepath: string): Promise<ParsedDocument> {
       return parsePptxFile(filepath);
     case 'xlsx':
       return parseXlsxFile(filepath);
+    case 'csv':
+      return parseCsvFile(filepath);
+    case 'json':
+      return parseJsonFile(filepath);
+    case 'rtf':
+      return parseRtfFile(filepath);
+    case 'html':
+      return parseHtmlFile(filepath);
     default:
       throw new Error(`Parser not implemented for file type: ${fileType}`);
   }
 }
 
-export { parseTextFile, parseMarkdownFile, parseDocxFile, parsePdfFile, parsePptxFile, parseXlsxFile };
+export {
+  parseTextFile,
+  parseMarkdownFile,
+  parseDocxFile,
+  parsePdfFile,
+  parsePptxFile,
+  parseXlsxFile,
+  parseCsvFile,
+  parseJsonFile,
+  parseRtfFile,
+  parseHtmlFile,
+};

@@ -29,7 +29,7 @@ export interface DocumentMetadata {
   [key: string]: unknown;
 }
 
-export type FileType = 'txt' | 'md' | 'docx' | 'pdf' | 'pptx' | 'xlsx';
+export type FileType = 'txt' | 'md' | 'docx' | 'pdf' | 'pptx' | 'xlsx' | 'csv' | 'html' | 'json' | 'rtf';
 export type DocumentStatus = 'pending' | 'processing' | 'indexed' | 'failed';
 
 // Chunk types
