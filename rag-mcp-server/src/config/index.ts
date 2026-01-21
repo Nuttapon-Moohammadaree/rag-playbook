@@ -83,6 +83,14 @@ export const config: Config = {
     autoTags: getEnvBoolean('AUTO_TAGS', false),
     hyde: getEnvBoolean('HYDE_ENABLED', false),
   },
+  verification: {
+    enabled: getEnvBoolean('VERIFICATION_ENABLED', false),
+    relevanceThreshold: parseFloat(getEnv('VERIFICATION_RELEVANCE_THRESHOLD', '0.6')),
+    groundingThreshold: parseFloat(getEnv('VERIFICATION_GROUNDING_THRESHOLD', '0.7')),
+    maxParallelCalls: getEnvNumber('VERIFICATION_MAX_PARALLEL', 3, 1, 10),
+    cacheResults: getEnvBoolean('VERIFICATION_CACHE', true),
+    cacheTtlMs: getEnvNumber('VERIFICATION_CACHE_TTL_MS', 5 * 60 * 1000, 0, 3600000), // 0 to 1 hour
+  },
 };
 
 export default config;

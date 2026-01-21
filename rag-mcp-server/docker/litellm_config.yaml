@@ -1,0 +1,40 @@
+# LiteLLM Configuration for RAG MCP Server
+model_list:
+  # Embedding model
+  - model_name: BAAI/bge-m3
+    litellm_params:
+      model: openai/BAAI/bge-m3
+      api_base: ${EMBEDDING_API_BASE:-http://localhost:11434/v1}
+      api_key: ${EMBEDDING_API_KEY:-sk-default}
+
+  # Reranker model
+  - model_name: BAAI/bge-reranker-v2-m3
+    litellm_params:
+      model: openai/BAAI/bge-reranker-v2-m3
+      api_base: ${RERANKER_API_BASE:-http://localhost:11434/v1}
+      api_key: ${RERANKER_API_KEY:-sk-default}
+
+  # LLM model
+  - model_name: gpt-oss-120b
+    litellm_params:
+      model: openai/gpt-4o
+      api_base: ${LLM_API_BASE:-https://api.openai.com/v1}
+      api_key: ${OPENAI_API_KEY:-sk-default}
+
+  # Fallback models
+  - model_name: gpt-4o
+    litellm_params:
+      model: gpt-4o
+      api_key: ${OPENAI_API_KEY:-sk-default}
+
+  - model_name: claude-3-5-sonnet
+    litellm_params:
+      model: claude-3-5-sonnet-20241022
+      api_key: ${ANTHROPIC_API_KEY:-sk-default}
+
+litellm_settings:
+  drop_params: true
+  set_verbose: false
+
+general_settings:
+  master_key: ${LITELLM_MASTER_KEY:-sk-default-key}

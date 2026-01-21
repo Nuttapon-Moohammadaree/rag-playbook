@@ -1,9 +1,15 @@
 /**
- * Ask service - RAG + LLM for question answering
+ * Ask service - RAG + LLM for question answering with optional verification
  */
 
 import { config } from '../../config/index.js';
 import { getRetrievalService, type SearchMetadata } from '../retrieval/service.js';
+import {
+  getVerificationService,
+  type VerificationResult,
+  type Citation,
+  type ScoredChunk,
+} from '../verification/index.js';
 import type { SearchResult } from '../../types/index.js';
 
 export interface AskRequest {
@@ -12,6 +18,8 @@ export interface AskRequest {
   threshold?: number;
   model?: string;
   rerank?: boolean;
+  /** Enable LLM verification pipeline */
+  verify?: boolean;
 }
 
 export interface AskResponse {
@@ -38,6 +46,10 @@ export interface AskResponse {
     };
   };
   metadata?: SearchMetadata;
+  /** Verification result (only present if verify=true) */
+  verification?: VerificationResult;
+  /** Confidence score based on verification (0-1) */
+  confidence?: number;
 }
 
 const DEFAULT_MODEL = 'gpt-oss-120b';
@@ -56,6 +68,7 @@ Guidelines:
 
 export class AskService {
   private retrievalService = getRetrievalService();
+  private verificationService = getVerificationService();
   private apiKey: string;
   private baseUrl: string;
 
@@ -65,7 +78,7 @@ export class AskService {
   }
 
   /**
-   * Answer a question using RAG
+   * Answer a question using RAG with optional verification
    */
   async ask(request: AskRequest): Promise<AskResponse> {
     const {
@@ -74,6 +87,7 @@ export class AskService {
       threshold = DEFAULT_THRESHOLD,
       model = DEFAULT_MODEL,
       rerank,
+      verify = false,
     } = request;
 
     // Retrieve relevant context with optional reranking (includes metadata)
@@ -85,25 +99,33 @@ export class AskService {
     });
 
     if (searchResults.length === 0) {
-      // Detect if query or context is likely Thai for bilingual response
-      const hasThai = /[\u0E00-\u0E7F]/.test(question);
-      // Also check for common Thai question words even without Thai script
-      const hasThaiPatterns = /\b(ยังไง|อะไร|ทำไม|ที่ไหน|เมื่อไร|ใคร)\b/.test(question);
+      return this.buildNoResultsResponse(question, model, metadata);
+    }
 
-      const respondInThai = hasThai || hasThaiPatterns;
-      const noResultsMessage = respondInThai
-        ? 'ไม่พบข้อมูลที่เกี่ยวข้องในฐานข้อมูล กรุณาลองถามคำถามอื่น หรือตรวจสอบว่าได้ index เอกสารที่เกี่ยวข้องแล้ว'
-        : 'No relevant information found in the database. Please try a different question or ensure the relevant documents have been indexed.';
-      return {
-        answer: noResultsMessage,
-        sources: [],
-        model,
-        metadata,
-      };
+    // If verification is enabled, filter chunks by relevance first
+    let resultsToUse = searchResults;
+    let chunksFiltered = 0;
+    let scoredChunks: ScoredChunk[] | null = null;
+
+    if (verify && config.verification.enabled) {
+      const filterResult = await this.verificationService.filterByRelevance(
+        question,
+        searchResults
+      );
+      chunksFiltered = filterResult.filteredCount;
+      scoredChunks = filterResult.relevantChunks;
+
+      // Use filtered results for answer generation
+      resultsToUse = filterResult.relevantChunks.map(c => c.searchResult);
+
+      // If all chunks were filtered out, return no results
+      if (resultsToUse.length === 0) {
+        return this.buildNoResultsResponse(question, model, metadata);
+      }
     }
 
     // Deduplicate sources by filepath, keeping highest score per file
-    const dedupedResults = this.deduplicateSources(searchResults);
+    const dedupedResults = this.deduplicateSources(resultsToUse);
 
     // Build context from search results
     const context = this.buildContext(dedupedResults);
@@ -111,21 +133,102 @@ export class AskService {
     // Generate answer using LLM
     const llmResponse = await this.generateAnswer(question, context, model);
 
-    return {
+    // Build base response
+    const response: AskResponse = {
       answer: llmResponse.answer,
       sources: dedupedResults.map(r => ({
         filename: r.document.filename,
         filepath: r.document.filepath,
         content: (r.content?.substring(0, 200) ?? '') + '...',
-        // Normalize score to [0,1] range and round to 3 decimal places for display
         score: Math.round(Math.max(0, Math.min(1, r.score)) * 1000) / 1000,
-        // Preserve original score for debugging/analysis
         originalScore: r.score,
       })),
       model,
       usage: llmResponse.usage ? {
         llm: llmResponse.usage,
       } : undefined,
+      metadata,
+    };
+
+    // Run verification if enabled
+    if (verify && config.verification.enabled) {
+      const verification = await this.runVerification(
+        question,
+        llmResponse.answer,
+        scoredChunks || dedupedResults.map(r => ({ searchResult: r, relevanceScore: r.score })),
+        chunksFiltered
+      );
+
+      response.verification = verification;
+      response.confidence = this.calculateConfidence(verification);
+    }
+
+    return response;
+  }
+
+  /**
+   * Run verification pipeline on the answer
+   */
+  private async runVerification(
+    question: string,
+    answer: string,
+    chunks: ScoredChunk[],
+    chunksFiltered: number
+  ): Promise<VerificationResult> {
+    const groundingResult = await this.verificationService.verifyGrounding(
+      question,
+      answer,
+      chunks
+    );
+
+    return {
+      enabled: true,
+      groundingScore: groundingResult.groundingScore,
+      isGrounded: groundingResult.isGrounded,
+      unsupportedClaims: groundingResult.unsupportedClaims,
+      citations: groundingResult.citations,
+      chunksFiltered,
+      verificationTimeMs: groundingResult.verificationTimeMs,
+    };
+  }
+
+  /**
+   * Calculate confidence score from verification result
+   */
+  private calculateConfidence(verification: VerificationResult): number {
+    // Base confidence from grounding score
+    let confidence = verification.groundingScore;
+
+    // Penalize for unsupported claims
+    if (verification.unsupportedClaims.length > 0) {
+      const penalty = Math.min(0.3, verification.unsupportedClaims.length * 0.1);
+      confidence -= penalty;
+    }
+
+    // Ensure confidence is in valid range
+    return Math.round(Math.max(0, Math.min(1, confidence)) * 100) / 100;
+  }
+
+  /**
+   * Build response for no results case
+   */
+  private buildNoResultsResponse(
+    question: string,
+    model: string,
+    metadata?: SearchMetadata
+  ): AskResponse {
+    const hasThai = /[\u0E00-\u0E7F]/.test(question);
+    const hasThaiPatterns = /\b(ยังไง|อะไร|ทำไม|ที่ไหน|เมื่อไร|ใคร)\b/.test(question);
+
+    const respondInThai = hasThai || hasThaiPatterns;
+    const noResultsMessage = respondInThai
+      ? 'ไม่พบข้อมูลที่เกี่ยวข้องในฐานข้อมูล กรุณาลองถามคำถามอื่น หรือตรวจสอบว่าได้ index เอกสารที่เกี่ยวข้องแล้ว'
+      : 'No relevant information found in the database. Please try a different question or ensure the relevant documents have been indexed.';
+
+    return {
+      answer: noResultsMessage,
+      sources: [],
+      model,
       metadata,
     };
   }
@@ -144,7 +247,6 @@ export class AskService {
       }
     }
 
-    // Sort by score descending
     return Array.from(dedupedMap.values()).sort((a, b) => b.score - a.score);
   }
 
@@ -175,7 +277,6 @@ Question: ${question}
 
 Please answer the question based on the context above.`;
 
-    // Create AbortController for timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), config.litellm.timeout);
 
@@ -205,7 +306,6 @@ Please answer the question based on the context above.`;
 
       const data = await response.json() as LLMResponse;
 
-      // Validate LLM response structure
       if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
         throw new Error('LLM API returned invalid response: missing or empty choices array');
       }
@@ -267,3 +367,6 @@ export function getAskService(): AskService {
   }
   return askService;
 }
+
+// Re-export verification types for convenience
+export type { VerificationResult, Citation };

@@ -192,4 +192,12 @@ export interface Config {
     autoTags: boolean;
     hyde: boolean;
   };
+  verification: {
+    enabled: boolean;
+    relevanceThreshold: number;
+    groundingThreshold: number;
+    maxParallelCalls: number;
+    cacheResults: boolean;
+    cacheTtlMs: number;
+  };
 }

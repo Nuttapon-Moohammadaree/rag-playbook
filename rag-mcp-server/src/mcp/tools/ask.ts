@@ -14,6 +14,7 @@ export const askSchema = z.object({
   threshold: z.number().min(0).max(1).optional().describe('Minimum similarity score for context (default: 0.5)'),
   model: z.string().optional().describe('LLM model to use (default: gpt-oss-120b)'),
   rerank: z.boolean().optional().describe('Enable reranking with cross-encoder (default: true)'),
+  verify: z.boolean().optional().describe('Enable LLM verification pipeline for answer grounding (default: false)'),
 });
 
 export interface AskResultData {
@@ -45,6 +46,23 @@ export interface AskResultData {
     queryExpanded: boolean;
     originalQuery: string;
   };
+  /** Verification result (only present if verify=true) */
+  verification?: {
+    enabled: boolean;
+    groundingScore: number;
+    isGrounded: boolean;
+    unsupportedClaims: string[];
+    citations: Array<{
+      chunkId: string;
+      filename: string;
+      quote: string;
+      relevanceScore: number;
+    }>;
+    chunksFiltered: number;
+    verificationTimeMs: number;
+  };
+  /** Confidence score (0-1, only present if verify=true) */
+  confidence?: number;
 }
 
 // Tool implementation
@@ -68,6 +86,7 @@ export async function ask(
       threshold: params.threshold,
       model: params.model,
       rerank: params.rerank,
+      verify: params.verify,
     });
 
     return {
