@@ -45,7 +45,8 @@ export async function search(
       filepath: r.document.filepath,
       fileType: r.document.fileType,
       content: r.content,
-      score: Math.round(r.score * 1000) / 1000, // Round to 3 decimal places
+      // Normalize score to [0,1] range and round to 3 decimal places
+      score: Math.round(Math.max(0, Math.min(1, r.score)) * 1000) / 1000,
       metadata: r.metadata,
     }));
 

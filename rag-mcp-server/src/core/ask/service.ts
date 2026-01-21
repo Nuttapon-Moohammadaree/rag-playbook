@@ -3,7 +3,7 @@
  */
 
 import { config } from '../../config/index.js';
-import { getRetrievalService } from '../retrieval/service.js';
+import { getRetrievalService, type SearchMetadata } from '../retrieval/service.js';
 import type { SearchResult } from '../../types/index.js';
 
 export interface AskRequest {
@@ -24,10 +24,19 @@ export interface AskResponse {
   }>;
   model: string;
   usage?: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
+    llm: {
+      promptTokens: number;
+      completionTokens: number;
+      totalTokens: number;
+    };
+    embedding?: {
+      totalTokens: number;
+    };
+    reranking?: {
+      totalTokens: number;
+    };
   };
+  metadata?: SearchMetadata;
 }
 
 const DEFAULT_MODEL = 'gpt-oss-120b';
@@ -66,8 +75,8 @@ export class AskService {
       rerank,
     } = request;
 
-    // Retrieve relevant context with optional reranking
-    const searchResults = await this.retrievalService.search({
+    // Retrieve relevant context with optional reranking (includes metadata)
+    const { results: searchResults, metadata } = await this.retrievalService.searchWithMetadata({
       query: question,
       limit,
       threshold,
@@ -84,26 +93,52 @@ export class AskService {
         answer: noResultsMessage,
         sources: [],
         model,
+        metadata,
       };
     }
 
+    // Deduplicate sources by filepath, keeping highest score per file
+    const dedupedResults = this.deduplicateSources(searchResults);
+
     // Build context from search results
-    const context = this.buildContext(searchResults);
+    const context = this.buildContext(dedupedResults);
 
     // Generate answer using LLM
     const llmResponse = await this.generateAnswer(question, context, model);
 
     return {
       answer: llmResponse.answer,
-      sources: searchResults.map(r => ({
+      sources: dedupedResults.map(r => ({
         filename: r.document.filename,
         filepath: r.document.filepath,
         content: (r.content?.substring(0, 200) ?? '') + '...',
-        score: Math.round(r.score * 1000) / 1000,
+        // Normalize score to [0,1] range and round to 3 decimal places
+        score: Math.round(Math.max(0, Math.min(1, r.score)) * 1000) / 1000,
       })),
       model,
-      usage: llmResponse.usage,
+      usage: llmResponse.usage ? {
+        llm: llmResponse.usage,
+      } : undefined,
+      metadata,
     };
+  }
+
+  /**
+   * Deduplicate search results by filepath, keeping highest score per file
+   */
+  private deduplicateSources(results: SearchResult[]): SearchResult[] {
+    const dedupedMap = new Map<string, SearchResult>();
+
+    for (const result of results) {
+      const filepath = result.document.filepath;
+      const existing = dedupedMap.get(filepath);
+      if (!existing || result.score > existing.score) {
+        dedupedMap.set(filepath, result);
+      }
+    }
+
+    // Sort by score descending
+    return Array.from(dedupedMap.values()).sort((a, b) => b.score - a.score);
   }
 
   /**
@@ -125,7 +160,7 @@ ${r.content}`;
     question: string,
     context: string,
     model: string
-  ): Promise<{ answer: string; usage?: AskResponse['usage'] }> {
+  ): Promise<{ answer: string; usage?: LLMUsage }> {
     const userPrompt = `Context:
 ${context}
 
@@ -178,6 +213,12 @@ Please answer the question based on the context above.`;
       } : undefined,
     };
   }
+}
+
+interface LLMUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
 }
 
 interface LLMResponse {

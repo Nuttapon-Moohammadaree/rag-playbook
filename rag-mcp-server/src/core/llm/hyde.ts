@@ -13,10 +13,15 @@ Write as if you are writing documentation or a knowledge base article.
 If the question is in Thai, write the passage in Thai.
 Do not include phrases like "This document explains..." - just write the content directly.`;
 
+interface CacheEntry {
+  value: string;
+  accessedAt: number;
+}
+
 export class HyDE {
   private llmService: LLMService;
   private enabled: boolean;
-  private cache: Map<string, string>;
+  private cache: Map<string, CacheEntry>;
   private cacheMaxSize: number;
 
   constructor(enabled: boolean = false) {
@@ -60,10 +65,11 @@ export class HyDE {
       return '';
     }
 
-    // Check cache first
+    // Check cache first (LRU: update access time on hit)
     const cached = this.cache.get(sanitizedQuery);
     if (cached) {
-      return cached;
+      cached.accessedAt = Date.now();
+      return cached.value;
     }
 
     try {
@@ -156,16 +162,24 @@ Write a detailed passage that would answer this question:`;
   }
 
   /**
-   * Add to cache with LRU-like behavior
+   * Add to cache with LRU eviction (removes least recently used entry when full)
    */
   private addToCache(query: string, doc: string): void {
     if (this.cache.size >= this.cacheMaxSize) {
-      const firstKey = this.cache.keys().next().value;
-      if (firstKey) {
-        this.cache.delete(firstKey);
+      // Find and remove least recently used entry
+      let lruKey: string | null = null;
+      let lruTime = Infinity;
+      for (const [key, entry] of this.cache) {
+        if (entry.accessedAt < lruTime) {
+          lruTime = entry.accessedAt;
+          lruKey = key;
+        }
+      }
+      if (lruKey) {
+        this.cache.delete(lruKey);
       }
     }
-    this.cache.set(query, doc);
+    this.cache.set(query, { value: doc, accessedAt: Date.now() });
   }
 
   /**

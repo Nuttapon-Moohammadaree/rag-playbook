@@ -24,10 +24,15 @@ Examples:
 - "VPN troubleshoot" → "VPN troubleshooting connection issues IPSec SSL tunnel debug connectivity problems แก้ปัญหา VPN"
 `;
 
+interface CacheEntry {
+  value: string;
+  accessedAt: number;
+}
+
 export class QueryEnhancer {
   private llmService: LLMService;
   private enabled: boolean;
-  private cache: Map<string, string>;
+  private cache: Map<string, CacheEntry>;
   private cacheMaxSize: number;
 
   constructor(enabled: boolean = true) {
@@ -73,10 +78,11 @@ export class QueryEnhancer {
       return sanitizedQuery;
     }
 
-    // Check cache first
+    // Check cache first (LRU: update access time on hit)
     const cached = this.cache.get(sanitizedQuery);
     if (cached) {
-      return cached;
+      cached.accessedAt = Date.now();
+      return cached.value;
     }
 
     try {
@@ -118,17 +124,24 @@ export class QueryEnhancer {
   }
 
   /**
-   * Add to cache with LRU-like behavior
+   * Add to cache with LRU eviction (removes least recently used entry when full)
    */
   private addToCache(query: string, expanded: string): void {
     if (this.cache.size >= this.cacheMaxSize) {
-      // Remove oldest entry
-      const firstKey = this.cache.keys().next().value;
-      if (firstKey) {
-        this.cache.delete(firstKey);
+      // Find and remove least recently used entry
+      let lruKey: string | null = null;
+      let lruTime = Infinity;
+      for (const [key, entry] of this.cache) {
+        if (entry.accessedAt < lruTime) {
+          lruTime = entry.accessedAt;
+          lruKey = key;
+        }
+      }
+      if (lruKey) {
+        this.cache.delete(lruKey);
       }
     }
-    this.cache.set(query, expanded);
+    this.cache.set(query, { value: expanded, accessedAt: Date.now() });
   }
 
   /**

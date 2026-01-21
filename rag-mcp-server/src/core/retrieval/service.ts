@@ -10,6 +10,18 @@ import { searchVectors, ensureCollection } from '../../storage/qdrant.js';
 import { config } from '../../config/index.js';
 import type { SearchRequest, SearchResult, SearchFilters } from '../../types/index.js';
 
+export interface SearchMetadata {
+  rerankUsed: boolean;
+  hydeUsed: boolean;
+  queryExpanded: boolean;
+  originalQuery: string;
+}
+
+export interface SearchWithMetadataResult {
+  results: SearchResult[];
+  metadata: SearchMetadata;
+}
+
 export class RetrievalService {
   private embeddingService = getEmbeddingService();
   private rerankingService = getRerankingService();
@@ -30,6 +42,14 @@ export class RetrievalService {
    * Search for relevant chunks with optional reranking and query expansion
    */
   async search(request: SearchRequest): Promise<SearchResult[]> {
+    const { results } = await this.searchWithMetadata(request);
+    return results;
+  }
+
+  /**
+   * Search with metadata about which features were used
+   */
+  async searchWithMetadata(request: SearchRequest): Promise<SearchWithMetadataResult> {
     await this.initialize();
 
     const {
@@ -43,7 +63,15 @@ export class RetrievalService {
     } = request;
 
     if (!query || query.trim().length === 0) {
-      return [];
+      return {
+        results: [],
+        metadata: {
+          rerankUsed: false,
+          hydeUsed: false,
+          queryExpanded: false,
+          originalQuery: query,
+        },
+      };
     }
 
     // Determine if HyDE should be used
@@ -54,13 +82,25 @@ export class RetrievalService {
 
     // Apply query transformations
     let searchQuery = query;
+    let actuallyUsedHyDE = false;
+    let actuallyExpandedQuery = false;
 
     if (useHyDE) {
       // Generate hypothetical document for complex queries
-      searchQuery = await this.hyde.generateHypotheticalDocument(query);
+      const hydeResult = await this.hyde.generateHypotheticalDocument(query);
+      // HyDE actually used if result is different from input
+      actuallyUsedHyDE = hydeResult !== query && hydeResult.length > 0;
+      if (actuallyUsedHyDE) {
+        searchQuery = hydeResult;
+      }
     } else if (useExpand) {
       // Expand query with related terms
-      searchQuery = await this.queryEnhancer.expand(query);
+      const expandedQuery = await this.queryEnhancer.expand(query);
+      // Expansion actually used if result is different from input
+      actuallyExpandedQuery = expandedQuery !== query && expandedQuery.length > 0;
+      if (actuallyExpandedQuery) {
+        searchQuery = expandedQuery;
+      }
     }
 
     // Determine if reranking should be used
@@ -77,6 +117,8 @@ export class RetrievalService {
     // Search vectors with expanded limit for reranking candidates
     const candidates = await searchVectors(queryEmbedding, candidateLimit, threshold, filters);
 
+    let actuallyReranked = false;
+
     // Apply reranking if enabled and we have more candidates than final limit
     if (useRerank && candidates.length > limit) {
       const reranked = await this.rerankingService.rerank({
@@ -85,16 +127,38 @@ export class RetrievalService {
         topN: limit,
       });
 
+      // Check if reranking actually happened (score >= 0 means it did)
+      actuallyReranked = reranked.some(r => r.relevanceScore >= 0);
+
       // Reorder results by rerank scores
+      // If rerank score is -1 (sentinel for skipped/failed), preserve original vector score
       const rerankedResults = reranked.map(r => ({
         ...candidates[r.index],
-        score: r.relevanceScore, // Replace vector similarity with rerank score
+        score: r.relevanceScore >= 0
+          ? r.relevanceScore
+          : candidates[r.index].score,
       }));
 
-      return rerankedResults;
+      return {
+        results: rerankedResults,
+        metadata: {
+          rerankUsed: actuallyReranked,
+          hydeUsed: actuallyUsedHyDE,
+          queryExpanded: actuallyExpandedQuery,
+          originalQuery: query,
+        },
+      };
     }
 
-    return candidates.slice(0, limit);
+    return {
+      results: candidates.slice(0, limit),
+      metadata: {
+        rerankUsed: false,
+        hydeUsed: actuallyUsedHyDE,
+        queryExpanded: actuallyExpandedQuery,
+        originalQuery: query,
+      },
+    };
   }
 
   /**

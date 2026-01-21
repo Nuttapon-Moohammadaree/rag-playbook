@@ -25,9 +25,23 @@ export interface AskResultData {
   }>;
   model: string;
   usage?: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
+    llm: {
+      promptTokens: number;
+      completionTokens: number;
+      totalTokens: number;
+    };
+    embedding?: {
+      totalTokens: number;
+    };
+    reranking?: {
+      totalTokens: number;
+    };
+  };
+  metadata?: {
+    rerankUsed: boolean;
+    hydeUsed: boolean;
+    queryExpanded: boolean;
+    originalQuery: string;
   };
 }
 

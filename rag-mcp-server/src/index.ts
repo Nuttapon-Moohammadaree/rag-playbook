@@ -324,8 +324,8 @@ async function cli(): Promise<void> {
             console.log(`  [${source.score}] ${source.filename}`);
           }
         }
-        if (response.usage) {
-          console.log(`\n(Tokens: ${response.usage.totalTokens})`);
+        if (response.usage?.llm) {
+          console.log(`\n(Tokens: ${response.usage.llm.totalTokens})`);
         }
         break;
       }
