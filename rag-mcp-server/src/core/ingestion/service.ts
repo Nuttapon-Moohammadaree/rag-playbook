@@ -36,6 +36,23 @@ import type {
   FileType,
 } from '../../types/index.js';
 
+/**
+ * Parameters for the shared content processing pipeline
+ */
+interface ProcessContentParams {
+  documentId: string;
+  filename: string;
+  filepath: string;
+  fileType: FileType;
+  content: string;
+  title: string;
+  chunkingOptions?: {
+    chunkSize?: number;
+    chunkOverlap?: number;
+  };
+  existingMetadata?: Record<string, unknown>;
+}
+
 export class IngestionService {
   private chunkingService = getChunkingService();
   private embeddingService = getEmbeddingService();
@@ -171,126 +188,29 @@ export class IngestionService {
           });
         }
 
-        // Chunk content
-        const chunks = this.chunkingService.chunk(parsed.content, {
-          chunkSize: options.chunkSize,
-          chunkOverlap: options.chunkOverlap,
-        });
-
-        if (chunks.length === 0) {
-          throw new Error('No content to index');
-        }
-
-        // Prepare chunk data
-        const chunkData = chunks.map((chunk, index) => ({
-          id: uuidv4(),
+        // Process content using shared pipeline
+        const docTitle = parsed.metadata?.title ?? filename;
+        const result = await this.processContent({
           documentId: actualDocumentId,
-          content: chunk.content,
-          chunkIndex: index,
-          startOffset: chunk.startOffset,
-          endOffset: chunk.endOffset,
-          tokenCount: chunk.tokenCount,
-          metadata: chunk.metadata,
-        }));
-
-        // Generate embeddings
-        const texts = chunkData.map(c => c.content);
-        const embeddingResponse = await this.embeddingService.embed(texts);
-
-        // Validate embeddings array length matches chunks
-        if (embeddingResponse.embeddings.length !== chunkData.length) {
-          throw new Error(
-            `Embedding count mismatch: expected ${chunkData.length}, got ${embeddingResponse.embeddings.length}`
-          );
-        }
-
-        // Validate embedding dimensions match configured vector size
-        const expectedDimension = config.qdrant.vectorSize;
-        for (let i = 0; i < embeddingResponse.embeddings.length; i++) {
-          const embedding = embeddingResponse.embeddings[i];
-          if (embedding && embedding.length !== expectedDimension) {
-            throw new Error(
-              `Embedding dimension mismatch at index ${i}: expected ${expectedDimension}, got ${embedding.length}`
-            );
-          }
-        }
-
-        // Store chunks in SQLite
-        insertChunks(chunkData);
-
-        // Store vectors in Qdrant
-        const vectorPoints = chunkData.map((chunk, index) => {
-          const vector = embeddingResponse.embeddings[index];
-          if (!vector) {
-            throw new Error(`Missing embedding for chunk index ${index}`);
-          }
-          return {
-            id: chunk.id,
-            vector,
-            payload: {
-              chunk_id: chunk.id,
-              document_id: actualDocumentId,
-              content: chunk.content,
-              chunk_index: chunk.chunkIndex,
-              filename,
-              filepath: validatedPath,
-              file_type: fileType,
-              metadata: chunk.metadata,
-            },
-          };
-        });
-
-        await upsertVectors(vectorPoints);
-
-        // Generate LLM enhancements if enabled (non-blocking)
-        let summary: string | undefined;
-        let tags: string[] | undefined;
-
-        if (config.llm.autoSummary || config.llm.autoTags) {
-          const docTitle = parsed.metadata?.title ?? filename;
-          const contentSample = parsed.content.substring(0, 10000);
-
-          // Generate summary and tags in parallel
-          const [summaryResult, tagsResult] = await Promise.allSettled([
-            config.llm.autoSummary
-              ? getSummarizer().generateBriefSummary(contentSample)
-              : Promise.resolve(undefined),
-            config.llm.autoTags
-              ? getTagger().generateTags(contentSample, docTitle)
-              : Promise.resolve(undefined),
-          ]);
-
-          if (summaryResult.status === 'fulfilled' && summaryResult.value) {
-            summary = summaryResult.value;
-          }
-          if (tagsResult.status === 'fulfilled' && tagsResult.value) {
-            tags = tagsResult.value;
-          }
-        }
-
-        // Update document status
-        updateDocument(actualDocumentId, {
-          status: 'indexed',
-          chunkCount: chunks.length,
-          indexedAt: new Date(),
-          summary,
-          tags,
+          filename,
+          filepath: validatedPath,
+          fileType,
+          content: parsed.content,
+          title: docTitle,
+          chunkingOptions: {
+            chunkSize: options.chunkSize,
+            chunkOverlap: options.chunkOverlap,
+          },
         });
 
         return {
           documentId: actualDocumentId,
           filename,
           status: 'success',
-          chunkCount: chunks.length,
+          chunkCount: result.chunkCount,
         };
       } catch (error) {
-        // Mark document as failed
-        updateDocument(actualDocumentId, {
-          status: 'failed',
-          metadata: {
-            error: error instanceof Error ? error.message : String(error),
-          },
-        });
+        this.handleProcessingError(actualDocumentId, error);
         throw error;
       }
     } catch (error) {
@@ -347,123 +267,24 @@ export class IngestionService {
       insertDocument(document);
 
       try {
-        // Chunk content
-        const chunks = this.chunkingService.chunk(content, {});
-
-        if (chunks.length === 0) {
-          throw new Error('No content to index');
-        }
-
-        // Prepare chunk data
-        const chunkData = chunks.map((chunk, index) => ({
-          id: uuidv4(),
+        // Process content using shared pipeline
+        const result = await this.processContent({
           documentId,
-          content: chunk.content,
-          chunkIndex: index,
-          startOffset: chunk.startOffset,
-          endOffset: chunk.endOffset,
-          tokenCount: chunk.tokenCount,
-          metadata: chunk.metadata,
-        }));
-
-        // Generate embeddings
-        const texts = chunkData.map(c => c.content);
-        const embeddingResponse = await this.embeddingService.embed(texts);
-
-        // Validate embeddings array length matches chunks
-        if (embeddingResponse.embeddings.length !== chunkData.length) {
-          throw new Error(
-            `Embedding count mismatch: expected ${chunkData.length}, got ${embeddingResponse.embeddings.length}`
-          );
-        }
-
-        // Validate embedding dimensions match configured vector size
-        const expectedDimension = config.qdrant.vectorSize;
-        for (let i = 0; i < embeddingResponse.embeddings.length; i++) {
-          const embedding = embeddingResponse.embeddings[i];
-          if (embedding && embedding.length !== expectedDimension) {
-            throw new Error(
-              `Embedding dimension mismatch at index ${i}: expected ${expectedDimension}, got ${embedding.length}`
-            );
-          }
-        }
-
-        // Store chunks in SQLite
-        insertChunks(chunkData);
-
-        // Store vectors in Qdrant
-        const vectorPoints = chunkData.map((chunk, index) => {
-          const vector = embeddingResponse.embeddings[index];
-          if (!vector) {
-            throw new Error(`Missing embedding for chunk index ${index}`);
-          }
-          return {
-            id: chunk.id,
-            vector,
-            payload: {
-              chunk_id: chunk.id,
-              document_id: documentId,
-              content: chunk.content,
-              chunk_index: chunk.chunkIndex,
-              filename,
-              filepath,
-              file_type: 'txt',
-              metadata: chunk.metadata,
-            },
-          };
-        });
-
-        await upsertVectors(vectorPoints);
-
-        // Generate LLM enhancements if enabled (non-blocking)
-        let summary: string | undefined;
-        let tags: string[] | undefined;
-
-        if (config.llm.autoSummary || config.llm.autoTags) {
-          const contentSample = content.substring(0, 10000);
-
-          // Generate summary and tags in parallel
-          const [summaryResult, tagsResult] = await Promise.allSettled([
-            config.llm.autoSummary
-              ? getSummarizer().generateBriefSummary(contentSample)
-              : Promise.resolve(undefined),
-            config.llm.autoTags
-              ? getTagger().generateTags(contentSample, title)
-              : Promise.resolve(undefined),
-          ]);
-
-          if (summaryResult.status === 'fulfilled' && summaryResult.value) {
-            summary = summaryResult.value;
-          }
-          if (tagsResult.status === 'fulfilled' && tagsResult.value) {
-            tags = tagsResult.value;
-          }
-        }
-
-        // Update document status
-        updateDocument(documentId, {
-          status: 'indexed',
-          chunkCount: chunks.length,
-          indexedAt: new Date(),
-          summary,
-          tags,
+          filename,
+          filepath,
+          fileType: 'txt' as FileType,
+          content,
+          title,
         });
 
         return {
           documentId,
           filename,
           status: 'success',
-          chunkCount: chunks.length,
+          chunkCount: result.chunkCount,
         };
       } catch (error) {
-        // Mark document as failed
-        updateDocument(documentId, {
-          status: 'failed',
-          metadata: {
-            ...document.metadata,
-            error: error instanceof Error ? error.message : String(error),
-          },
-        });
+        this.handleProcessingError(documentId, error, document.metadata);
         throw error;
       }
     } catch (error) {
@@ -494,6 +315,155 @@ export class IngestionService {
 
     // Delete document from SQLite
     return deleteDocumentFromDb(documentId);
+  }
+
+  /**
+   * Shared content processing pipeline for both file-based and text-based indexing
+   * Handles chunking, embedding, storage, and LLM enhancements
+   */
+  private async processContent(params: ProcessContentParams): Promise<{
+    chunkCount: number;
+    summary?: string;
+    tags?: string[];
+  }> {
+    const {
+      documentId,
+      filename,
+      filepath,
+      fileType,
+      content,
+      title,
+      chunkingOptions = {},
+      existingMetadata = {},
+    } = params;
+
+    // Chunk content
+    const chunks = this.chunkingService.chunk(content, {
+      chunkSize: chunkingOptions.chunkSize,
+      chunkOverlap: chunkingOptions.chunkOverlap,
+    });
+
+    if (chunks.length === 0) {
+      throw new Error('No content to index');
+    }
+
+    // Prepare chunk data
+    const chunkData = chunks.map((chunk, index) => ({
+      id: uuidv4(),
+      documentId,
+      content: chunk.content,
+      chunkIndex: index,
+      startOffset: chunk.startOffset,
+      endOffset: chunk.endOffset,
+      tokenCount: chunk.tokenCount,
+      metadata: chunk.metadata,
+    }));
+
+    // Generate embeddings
+    const texts = chunkData.map(c => c.content);
+    const embeddingResponse = await this.embeddingService.embed(texts);
+
+    // Validate embeddings array length matches chunks
+    if (embeddingResponse.embeddings.length !== chunkData.length) {
+      throw new Error(
+        `Embedding count mismatch: expected ${chunkData.length}, got ${embeddingResponse.embeddings.length}`
+      );
+    }
+
+    // Validate embedding dimensions match configured vector size
+    const expectedDimension = config.qdrant.vectorSize;
+    for (let i = 0; i < embeddingResponse.embeddings.length; i++) {
+      const embedding = embeddingResponse.embeddings[i];
+      if (embedding && embedding.length !== expectedDimension) {
+        throw new Error(
+          `Embedding dimension mismatch at index ${i}: expected ${expectedDimension}, got ${embedding.length}`
+        );
+      }
+    }
+
+    // Store chunks in SQLite
+    insertChunks(chunkData);
+
+    // Store vectors in Qdrant
+    const vectorPoints = chunkData.map((chunk, index) => {
+      const vector = embeddingResponse.embeddings[index];
+      if (!vector) {
+        throw new Error(`Missing embedding for chunk index ${index}`);
+      }
+      return {
+        id: chunk.id,
+        vector,
+        payload: {
+          chunk_id: chunk.id,
+          document_id: documentId,
+          content: chunk.content,
+          chunk_index: chunk.chunkIndex,
+          filename,
+          filepath,
+          file_type: fileType,
+          metadata: chunk.metadata,
+        },
+      };
+    });
+
+    await upsertVectors(vectorPoints);
+
+    // Generate LLM enhancements if enabled
+    let summary: string | undefined;
+    let tags: string[] | undefined;
+
+    if (config.llm.autoSummary || config.llm.autoTags) {
+      const contentSample = content.substring(0, 10000);
+
+      // Generate summary and tags in parallel
+      const [summaryResult, tagsResult] = await Promise.allSettled([
+        config.llm.autoSummary
+          ? getSummarizer().generateBriefSummary(contentSample)
+          : Promise.resolve(undefined),
+        config.llm.autoTags
+          ? getTagger().generateTags(contentSample, title)
+          : Promise.resolve(undefined),
+      ]);
+
+      if (summaryResult.status === 'fulfilled' && summaryResult.value) {
+        summary = summaryResult.value;
+      }
+      if (tagsResult.status === 'fulfilled' && tagsResult.value) {
+        tags = tagsResult.value;
+      }
+    }
+
+    // Update document status
+    updateDocument(documentId, {
+      status: 'indexed',
+      chunkCount: chunks.length,
+      indexedAt: new Date(),
+      summary,
+      tags,
+    });
+
+    return {
+      chunkCount: chunks.length,
+      summary,
+      tags,
+    };
+  }
+
+  /**
+   * Handle processing errors by marking document as failed
+   */
+  private handleProcessingError(
+    documentId: string,
+    error: unknown,
+    existingMetadata?: Record<string, unknown>
+  ): void {
+    updateDocument(documentId, {
+      status: 'failed',
+      metadata: {
+        ...existingMetadata,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
   }
 
   /**

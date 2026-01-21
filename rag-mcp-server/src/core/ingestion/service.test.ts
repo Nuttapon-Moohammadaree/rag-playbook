@@ -56,6 +56,9 @@ vi.mock('../../config/index.js', () => ({
       autoSummary: false,
       autoTags: false,
     },
+    qdrant: {
+      vectorSize: 3, // Match the mock embedding dimensions
+    },
   },
 }));
 
@@ -119,6 +122,15 @@ vi.mock('../../storage/qdrant.js', () => ({
   ensureCollection: (...args: unknown[]) => mockEnsureCollection(...args),
   upsertVectors: (...args: unknown[]) => mockUpsertVectors(...args),
   deleteVectorsByDocumentId: (...args: unknown[]) => mockDeleteVectorsByDocumentId(...args),
+}));
+
+// Mock security utilities
+vi.mock('../../utils/security.js', () => ({
+  validateFilePath: (path: string) => path, // Return path as-is for tests
+  validateDocumentId: () => undefined, // No-op validation for tests
+  documentLockManager: {
+    acquire: () => Promise.resolve(() => undefined), // Return release function
+  },
 }));
 
 // Mock uuid
@@ -261,7 +273,7 @@ describe('IngestionService', () => {
         { content: 'Chunk 3', startOffset: 20, endOffset: 30, tokenCount: 5, metadata: {} },
       ]);
       mockEmbed.mockResolvedValue({
-        embeddings: [[0.1], [0.2], [0.3]],
+        embeddings: [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6], [0.7, 0.8, 0.9]], // 3 dimensions to match config.qdrant.vectorSize
       });
 
       const result = await service.indexDocument('/path/to/file.txt');
