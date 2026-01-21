@@ -14,7 +14,6 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "noEmit": true,
     "paths": {
       "@core/*": ["../src/core/*"],
       "@storage/*": ["../src/storage/*"],
@@ -23,5 +22,5 @@
     }
   },
   "include": ["src/**/*", "../src/**/*"],
-  "exclude": ["node_modules", "dist", "../node_modules"]
+  "exclude": ["node_modules", "dist", "../node_modules", "**/*.test.ts"]
 }

@@ -7,6 +7,9 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #813 | 10:23 AM | 🔵 | Comprehensive code review reveals 42 issues across core services with concurrency and validation gaps | ~731 |
+| #808 | 10:22 AM | 🔵 | Document deletion cascade and streaming checksum computation | ~514 |
+| #804 | " | 🔵 | Text indexing with memory-based document handling and error tracking | ~485 |
 | #469 | 6:59 AM | 🟣 | Comprehensive Test Plan Created for Phase 2 LLM Features | ~278 |
 | #462 | 6:58 AM | 🔵 | Ingestion Service Review Part 1 - Document Processing Pipeline | ~519 |
 | #428 | 6:44 AM | 🟣 | Auto-Summary and Auto-Tags Added to Text Indexing Pipeline | ~431 |

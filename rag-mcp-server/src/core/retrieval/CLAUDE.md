@@ -7,6 +7,8 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #813 | 10:23 AM | 🔵 | Comprehensive code review reveals 42 issues across core services with concurrency and validation gaps | ~731 |
+| #783 | 10:18 AM | 🔵 | Retrieval service with HyDE, query expansion, and reranking pipeline | ~469 |
 | #469 | 6:59 AM | 🟣 | Comprehensive Test Plan Created for Phase 2 LLM Features | ~278 |
 | #453 | 6:57 AM | 🔵 | Retrieval Service Review - Query Transformation Pipeline with Mutual Exclusivity | ~581 |
 | #434 | 6:45 AM | ✅ | HyDE Instance Added to Retrieval Service Dependencies | ~224 |

@@ -7,6 +7,9 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #813 | 10:23 AM | 🔵 | Comprehensive code review reveals 42 issues across core services with concurrency and validation gaps | ~731 |
+| #798 | 10:20 AM | 🔵 | Document summarizer with three style variants and content truncation | ~521 |
+| #788 | 10:19 AM | 🔵 | Base LLM service with OpenAI-compatible chat completions API | ~446 |
 | #469 | 6:59 AM | 🟣 | Comprehensive Test Plan Created for Phase 2 LLM Features | ~278 |
 | #455 | 6:58 AM | 🔵 | Query Enhancer Review - Domain-Specific Expansion with Examples | ~231 |
 | #451 | 6:56 AM | 🔵 | HyDE Service Review - Intelligent Query Classification with LRU Cache | ~250 |

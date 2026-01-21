@@ -8,6 +8,7 @@ import { zValidator } from '@hono/zod-validator';
 
 // Import core services
 import { getRetrievalService } from '../../../src/core/retrieval/service.js';
+import { insertQueryLog } from '../../../src/storage/sqlite.js';
 import type { FileType, SearchFilters } from '../../../src/types/index.js';
 
 const search = new Hono();
@@ -34,6 +35,7 @@ const searchSchema = z.object({
  */
 search.post('/', zValidator('json', searchSchema), async (c) => {
   const body = c.req.valid('json');
+  const startTime = Date.now();
 
   try {
     const retrievalService = getRetrievalService();
@@ -58,6 +60,27 @@ search.post('/', zValidator('json', searchSchema), async (c) => {
       hyde: body.hyde,
       filters,
     });
+
+    const latencyMs = Date.now() - startTime;
+
+    // Log the query for analytics
+    try {
+      insertQueryLog({
+        query: body.query,
+        queryType: 'search',
+        source: 'api',
+        resultCount: results.length,
+        topScore: results.length > 0 ? results[0].score : null,
+        latencyMs,
+        metadata: {
+          rerank: body.rerank,
+          expand: body.expand,
+          hyde: body.hyde,
+        },
+      });
+    } catch {
+      // Silently fail - don't break search if logging fails
+    }
 
     // Serialize results for API response
     const serializedResults = results.map(r => ({
@@ -84,6 +107,7 @@ search.post('/', zValidator('json', searchSchema), async (c) => {
           queryExpanded: metadata.queryExpanded,
           originalQuery: metadata.originalQuery,
           totalResults: results.length,
+          latencyMs,
         },
       },
     });

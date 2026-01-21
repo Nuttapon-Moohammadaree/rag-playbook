@@ -27,9 +27,9 @@ export async function ensureCollection(): Promise<void> {
   } catch (error) {
     // Check if it's a "not found" error vs connection error
     const errorMessage = error instanceof Error ? error.message : String(error);
-    const isNotFound = errorMessage.includes('not found') ||
-                       errorMessage.includes('Not found') ||
-                       errorMessage.includes('404');
+    const isNotFound = errorMessage.toLowerCase().includes('not found') ||
+                       errorMessage.includes('404') ||
+                       errorMessage.includes('doesn\'t exist');
 
     if (!isNotFound) {
       // Connection or other error - rethrow with context
@@ -185,9 +185,9 @@ export async function getCollectionInfo(): Promise<{
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    const isNotFound = errorMessage.includes('not found') ||
-                       errorMessage.includes('Not found') ||
-                       errorMessage.includes('404');
+    const isNotFound = errorMessage.toLowerCase().includes('not found') ||
+                       errorMessage.includes('404') ||
+                       errorMessage.includes('doesn\'t exist');
 
     if (isNotFound) {
       return {

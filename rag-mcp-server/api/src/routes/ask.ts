@@ -8,6 +8,7 @@ import { zValidator } from '@hono/zod-validator';
 
 // Import core services
 import { getAskService } from '../../../src/core/ask/service.js';
+import { insertQueryLog } from '../../../src/storage/sqlite.js';
 
 const ask = new Hono();
 
@@ -27,6 +28,7 @@ const askSchema = z.object({
  */
 ask.post('/', zValidator('json', askSchema), async (c) => {
   const body = c.req.valid('json');
+  const startTime = Date.now();
 
   try {
     const askService = getAskService();
@@ -38,6 +40,27 @@ ask.post('/', zValidator('json', askSchema), async (c) => {
       rerank: body.rerank,
       verify: body.verify,
     });
+
+    const latencyMs = Date.now() - startTime;
+
+    // Log the query for analytics
+    try {
+      insertQueryLog({
+        query: body.question,
+        queryType: 'ask',
+        source: 'api',
+        resultCount: result.sources.length,
+        topScore: result.sources.length > 0 ? result.sources[0].score : null,
+        latencyMs,
+        metadata: {
+          model: body.model,
+          rerank: body.rerank,
+          verify: body.verify,
+        },
+      });
+    } catch {
+      // Silently fail - don't break ask if logging fails
+    }
 
     // Build response with optional verification data
     const response: Record<string, unknown> = {
@@ -51,6 +74,7 @@ ask.post('/', zValidator('json', askSchema), async (c) => {
         hydeUsed: result.metadata?.hydeUsed ?? false,
         queryExpanded: result.metadata?.queryExpanded ?? false,
         verificationEnabled: body.verify,
+        latencyMs,
       },
     };
 

@@ -7,6 +7,7 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #795 | 10:20 AM | 🔵 | Comprehensive type system for RAG operations and configuration | ~549 |
 | #432 | 6:45 AM | ✅ | SearchRequest Extended with HyDE Flag | ~236 |
 | #418 | 6:41 AM | ✅ | Document Interface Extended with Summary and Tags Fields | ~295 |
 | #399 | 6:37 AM | ✅ | SearchRequest Extended with Query Expansion Flag | ~244 |

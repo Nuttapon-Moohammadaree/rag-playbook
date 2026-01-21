@@ -1,20 +1,33 @@
 import { useState } from 'react';
-import { FileText, Search, MessageSquare, Settings } from 'lucide-react';
+import { LayoutDashboard, FileText, Search, MessageSquare, Settings, FolderOpen, BarChart3 } from 'lucide-react';
 import { clsx } from 'clsx';
+import DashboardPanel from './components/dashboard/DashboardPanel';
 import DocumentsPanel from './components/documents/DocumentsPanel';
+import CollectionsPanel from './components/collections/CollectionsPanel';
 import SearchInterface from './components/search/SearchInterface';
 import AskInterface from './components/ask/AskInterface';
+import AnalyticsPanel from './components/analytics/AnalyticsPanel';
+import SettingsPanel from './components/settings/SettingsPanel';
 
-type Tab = 'documents' | 'search' | 'ask';
+type Tab = 'dashboard' | 'documents' | 'search' | 'ask' | 'collections' | 'analytics' | 'settings';
 
-const tabs = [
-  { id: 'documents' as const, label: 'Documents', icon: FileText },
-  { id: 'search' as const, label: 'Search', icon: Search },
-  { id: 'ask' as const, label: 'Ask', icon: MessageSquare },
+const tabs: Array<{ id: Tab; label: string; icon: typeof FileText }> = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'documents', label: 'Documents', icon: FileText },
+  { id: 'collections', label: 'Collections', icon: FolderOpen },
+  { id: 'search', label: 'Search', icon: Search },
+  { id: 'ask', label: 'Ask', icon: MessageSquare },
+  { id: 'analytics', label: 'Analytics', icon: BarChart3 },
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<Tab>('documents');
+  const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+
+  const handleNavigate = (tab: string) => {
+    if (tabs.some(t => t.id === tab) || tab === 'settings') {
+      setActiveTab(tab as Tab);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -28,7 +41,15 @@ export default function App() {
               </div>
               <h1 className="text-xl font-semibold text-gray-900">RAG MCP Server</h1>
             </div>
-            <button className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
+            <button
+              onClick={() => setActiveTab('settings')}
+              className={clsx(
+                'p-2 rounded-lg transition-colors',
+                activeTab === 'settings'
+                  ? 'text-primary-600 bg-primary-50'
+                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+              )}
+            >
               <Settings className="w-5 h-5" />
             </button>
           </div>
@@ -63,9 +84,13 @@ export default function App() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {activeTab === 'dashboard' && <DashboardPanel onNavigate={handleNavigate} />}
         {activeTab === 'documents' && <DocumentsPanel />}
+        {activeTab === 'collections' && <CollectionsPanel />}
         {activeTab === 'search' && <SearchInterface />}
         {activeTab === 'ask' && <AskInterface />}
+        {activeTab === 'analytics' && <AnalyticsPanel />}
+        {activeTab === 'settings' && <SettingsPanel />}
       </main>
 
       {/* Footer */}

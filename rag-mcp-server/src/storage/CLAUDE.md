@@ -7,6 +7,12 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #1140 | 2:29 PM | 🔵 | SQLite Storage Layer with Relational Schema and Transaction Support | ~509 |
+| #1109 | 1:56 PM | 🔴 | Improved Qdrant Not Found Error Detection Logic | ~332 |
+| #1108 | " | 🔵 | Qdrant Collection Auto-Creation with Detailed Configuration | ~392 |
+| #791 | 10:19 AM | 🔵 | SQLite metadata storage with WAL mode and migration support | ~524 |
+| #790 | " | 🔵 | Qdrant vector storage with collection management and filtered search | ~501 |
+| #518 | 7:46 AM | 🔵 | SQLite Schema for Document and Chunk Metadata | ~427 |
 | #438 | 6:54 AM | 🔵 | SQLite Storage Layer Review - Migration and LLM Field Support | ~421 |
 | #423 | 6:42 AM | ✅ | Document Row Mapping Updated for Summary and Tags Deserialization | ~425 |
 | #422 | " | ✅ | Update Document Extended to Support Summary and Tags Modification | ~356 |

@@ -260,3 +260,143 @@ export async function checkHealth() {
     version: string;
   }>('/health');
 }
+
+// Collection types
+export interface Collection {
+  id: string;
+  name: string;
+  description?: string;
+  color: string;
+  documentCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Collection APIs
+export async function listCollections() {
+  return fetchApi<{
+    collections: Collection[];
+    total: number;
+  }>('/collections');
+}
+
+export async function createCollection(data: {
+  name: string;
+  description?: string;
+  color?: string;
+}) {
+  return fetchApi<Collection>('/collections', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateCollection(id: string, data: {
+  name?: string;
+  description?: string;
+  color?: string;
+}) {
+  return fetchApi<Collection>(`/collections/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteCollection(id: string) {
+  return fetchApi<{ collectionId: string; message: string }>(`/collections/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function getCollectionDocuments(id: string) {
+  return fetchApi<{
+    collection: Collection;
+    documents: Document[];
+    total: number;
+  }>(`/collections/${id}/documents`);
+}
+
+export async function addDocumentToCollection(collectionId: string, documentId: string) {
+  return fetchApi<{ collectionId: string; documentId: string; message: string }>(
+    `/collections/${collectionId}/documents`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ documentId }),
+    }
+  );
+}
+
+export async function removeDocumentFromCollection(collectionId: string, documentId: string) {
+  return fetchApi<{ collectionId: string; documentId: string; message: string }>(
+    `/collections/${collectionId}/documents/${documentId}`,
+    {
+      method: 'DELETE',
+    }
+  );
+}
+
+// Analytics types
+export interface QueryStats {
+  totalQueries: number;
+  searchQueries: number;
+  askQueries: number;
+  avgLatencyMs: number;
+  avgResultCount: number;
+  queriesLast24h: number;
+  queriesLast7d: number;
+}
+
+export interface QueryTrend {
+  date: string;
+  searchCount: number;
+  askCount: number;
+  totalCount: number;
+}
+
+export interface TopQuery {
+  query: string;
+  count: number;
+  avgLatencyMs: number;
+  lastUsed: string;
+}
+
+export interface QueryLogEntry {
+  id: number;
+  query: string;
+  queryType: 'search' | 'ask';
+  source: string;
+  resultCount: number;
+  topScore: number | null;
+  latencyMs: number | null;
+  createdAt: string;
+}
+
+// Analytics APIs
+export async function getAnalyticsStats() {
+  return fetchApi<QueryStats>('/analytics/stats');
+}
+
+export async function getQueryTrends(days: number = 7) {
+  return fetchApi<{
+    trends: QueryTrend[];
+    period: { days: number; start: string; end: string };
+  }>(`/analytics/trends?days=${days}`);
+}
+
+export async function getTopQueries(limit: number = 10, type?: 'search' | 'ask') {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (type) params.set('type', type);
+  return fetchApi<{
+    queries: TopQuery[];
+    total: number;
+  }>(`/analytics/top-queries?${params.toString()}`);
+}
+
+export async function getRecentQueries(limit: number = 100, type?: 'search' | 'ask') {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (type) params.set('type', type);
+  return fetchApi<{
+    queries: QueryLogEntry[];
+    total: number;
+  }>(`/analytics/queries?${params.toString()}`);
+}

@@ -7,6 +7,9 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #786 | 10:18 AM | 🔵 | MCP tool registry with 8 tools and Zod-to-JSON schema conversion | ~461 |
+| #785 | " | 🔵 | MCP ask tool for RAG-powered question answering | ~433 |
+| #784 | " | 🔵 | MCP document management tools with Zod schema validation | ~451 |
 | #469 | 6:59 AM | 🟣 | Comprehensive Test Plan Created for Phase 2 LLM Features | ~278 |
 | #446 | 6:55 AM | 🔵 | Document Management Tools Review - Complete CRUD Operations | ~469 |
 | #445 | " | 🔵 | Summarize Document Tool Review - Full Document Reconstruction | ~195 |

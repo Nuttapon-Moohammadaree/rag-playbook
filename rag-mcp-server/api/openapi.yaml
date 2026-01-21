@@ -20,10 +20,14 @@ tags:
     description: Health check endpoints
   - name: documents
     description: Document management operations
+  - name: collections
+    description: Document collection management
   - name: search
     description: Semantic search operations
   - name: ask
     description: Question answering with RAG
+  - name: analytics
+    description: Query analytics and metrics
 
 paths:
   /health:
@@ -284,6 +288,376 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+
+  /collections:
+    get:
+      summary: List collections
+      description: Retrieve all document collections
+      tags:
+        - collections
+      responses:
+        '200':
+          description: List of collections
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionListResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: Create collection
+      description: Create a new document collection
+      tags:
+        - collections
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCollectionRequest'
+      responses:
+        '201':
+          description: Collection created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionResponse'
+        '409':
+          description: Collection name already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /collections/{id}:
+    get:
+      summary: Get collection by ID
+      description: Retrieve a single collection by its ID
+      tags:
+        - collections
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Collection ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Collection found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionResponse'
+        '404':
+          description: Collection not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      summary: Update collection
+      description: Update a collection's name, description, or color
+      tags:
+        - collections
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Collection ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCollectionRequest'
+      responses:
+        '200':
+          description: Collection updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionResponse'
+        '404':
+          description: Collection not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Name conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Delete collection
+      description: Delete a collection (documents are unassigned, not deleted)
+      tags:
+        - collections
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Collection ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Collection deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      collectionId:
+                        type: string
+                      message:
+                        type: string
+        '404':
+          description: Collection not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /collections/{id}/documents:
+    get:
+      summary: Get collection documents
+      description: Get all documents in a collection
+      tags:
+        - collections
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Collection ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Collection with documents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      collection:
+                        $ref: '#/components/schemas/Collection'
+                      documents:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Document'
+                      total:
+                        type: integer
+        '404':
+          description: Collection not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: Add document to collection
+      description: Add an existing document to a collection
+      tags:
+        - collections
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Collection ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - documentId
+              properties:
+                documentId:
+                  type: string
+      responses:
+        '200':
+          description: Document added to collection
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      collectionId:
+                        type: string
+                      documentId:
+                        type: string
+                      message:
+                        type: string
+
+  /collections/{id}/documents/{documentId}:
+    delete:
+      summary: Remove document from collection
+      description: Remove a document from a collection (document is not deleted)
+      tags:
+        - collections
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Collection ID
+          schema:
+            type: string
+        - name: documentId
+          in: path
+          required: true
+          description: Document ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Document removed from collection
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      collectionId:
+                        type: string
+                      documentId:
+                        type: string
+                      message:
+                        type: string
+
+  /analytics/stats:
+    get:
+      summary: Get query statistics
+      description: Get overall query analytics statistics
+      tags:
+        - analytics
+      responses:
+        '200':
+          description: Query statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryStatsResponse'
+
+  /analytics/trends:
+    get:
+      summary: Get query trends
+      description: Get query trends over time
+      tags:
+        - analytics
+      parameters:
+        - name: days
+          in: query
+          description: Number of days to include
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+            default: 7
+      responses:
+        '200':
+          description: Query trends
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryTrendsResponse'
+
+  /analytics/top-queries:
+    get:
+      summary: Get top queries
+      description: Get most frequent queries
+      tags:
+        - analytics
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum results
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+        - name: type
+          in: query
+          description: Filter by query type
+          schema:
+            type: string
+            enum: [search, ask]
+      responses:
+        '200':
+          description: Top queries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopQueriesResponse'
+
+  /analytics/queries:
+    get:
+      summary: Get recent queries
+      description: Get recent query log entries
+      tags:
+        - analytics
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum results
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+        - name: type
+          in: query
+          description: Filter by query type
+          schema:
+            type: string
+            enum: [search, ask]
+      responses:
+        '200':
+          description: Recent queries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecentQueriesResponse'
 
 components:
   schemas:
@@ -674,3 +1048,211 @@ components:
           type: string
           description: Error message
           example: Document not found
+
+    Collection:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 500
+        color:
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
+        documentCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateCollectionRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 500
+        color:
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
+          default: '#6366f1'
+
+    UpdateCollectionRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 500
+        color:
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
+
+    CollectionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/Collection'
+
+    CollectionListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            collections:
+              type: array
+              items:
+                $ref: '#/components/schemas/Collection'
+            total:
+              type: integer
+
+    QueryStats:
+      type: object
+      properties:
+        totalQueries:
+          type: integer
+        searchQueries:
+          type: integer
+        askQueries:
+          type: integer
+        avgLatencyMs:
+          type: integer
+        avgResultCount:
+          type: number
+        queriesLast24h:
+          type: integer
+        queriesLast7d:
+          type: integer
+
+    QueryStatsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/QueryStats'
+
+    QueryTrend:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        searchCount:
+          type: integer
+        askCount:
+          type: integer
+        totalCount:
+          type: integer
+
+    QueryTrendsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            trends:
+              type: array
+              items:
+                $ref: '#/components/schemas/QueryTrend'
+            period:
+              type: object
+              properties:
+                days:
+                  type: integer
+                start:
+                  type: string
+                  format: date-time
+                end:
+                  type: string
+                  format: date-time
+
+    TopQuery:
+      type: object
+      properties:
+        query:
+          type: string
+        count:
+          type: integer
+        avgLatencyMs:
+          type: integer
+        lastUsed:
+          type: string
+          format: date-time
+
+    TopQueriesResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            queries:
+              type: array
+              items:
+                $ref: '#/components/schemas/TopQuery'
+            total:
+              type: integer
+
+    QueryLogEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        query:
+          type: string
+        queryType:
+          type: string
+          enum: [search, ask]
+        source:
+          type: string
+        resultCount:
+          type: integer
+        topScore:
+          type: number
+          nullable: true
+        latencyMs:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    RecentQueriesResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            queries:
+              type: array
+              items:
+                $ref: '#/components/schemas/QueryLogEntry'
+            total:
+              type: integer

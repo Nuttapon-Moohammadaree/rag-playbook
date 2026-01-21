@@ -19,6 +19,7 @@ export interface Document {
   metadata: DocumentMetadata;
   summary?: string;
   tags?: string[];
+  collectionId?: string;
 }
 
 export interface DocumentMetadata {

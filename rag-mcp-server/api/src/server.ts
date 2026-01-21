@@ -15,6 +15,8 @@ import health from './routes/health.js';
 import documents from './routes/documents.js';
 import search from './routes/search.js';
 import ask from './routes/ask.js';
+import collections from './routes/collections.js';
+import analytics from './routes/analytics.js';
 
 export function createApp() {
   const app = new Hono();
@@ -34,6 +36,8 @@ export function createApp() {
   app.route('/api/documents', documents);
   app.route('/api/search', search);
   app.route('/api/ask', ask);
+  app.route('/api/collections', collections);
+  app.route('/api/analytics', analytics);
 
   // Root endpoint
   app.get('/', (c) => {
@@ -43,8 +47,10 @@ export function createApp() {
       endpoints: {
         health: '/api/health',
         documents: '/api/documents',
+        collections: '/api/collections',
         search: '/api/search',
         ask: '/api/ask',
+        analytics: '/api/analytics',
       },
       documentation: '/api/docs',
     });
