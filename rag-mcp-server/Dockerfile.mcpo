@@ -1,0 +1,27 @@
+# Custom MCPO image with RAG MCP Server pre-installed
+FROM ghcr.io/open-webui/mcpo:main
+
+# Install build dependencies for native modules
+USER root
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app directory structure
+WORKDIR /app/rag-mcp
+
+# Copy package files first for better caching
+COPY package.json package-lock.json ./
+
+# Install Node.js dependencies (builds native modules in container)
+RUN npm ci --only=production
+
+# Copy compiled TypeScript
+COPY dist/ ./dist/
+
+# Set working directory back to MCPO default
+WORKDIR /app
+
+# The entrypoint remains from base image (mcpo)

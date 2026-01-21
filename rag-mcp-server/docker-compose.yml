@@ -48,6 +48,37 @@ services:
     networks:
       - rag-network
 
+  # MCPO - MCP to OpenAPI Proxy (for Open WebUI)
+  mcpo:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcpo
+    container_name: rag-mcp-mcpo
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config/mcpo-config.json:/app/config.json:ro
+      - ./data/sqlite:/app/data/sqlite
+      - ${DOCUMENTS_PATH:-/home/aitma/rag-playbook/CS_Playbook}:/documents:ro
+    command: ["--config", "/app/config.json", "--port", "8000"]
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - LITELLM_API_KEY=${LITELLM_API_KEY}
+      - LITELLM_BASE_URL=${LITELLM_BASE_URL:-https://csai.ait.co.th/litellm/v1}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-BAAI/bge-m3}
+      - RERANKER_MODEL=${RERANKER_MODEL:-BAAI/bge-reranker-v2-m3}
+      - LLM_MODEL=${LLM_MODEL:-gpt-oss-120b}
+      - SQLITE_PATH=/app/data/sqlite/rag.db
+      - VECTOR_SIZE=1024
+      - CHUNK_SIZE=512
+      - CHUNK_OVERLAP=50
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - rag-network
+
 networks:
   rag-network:
     driver: bridge
