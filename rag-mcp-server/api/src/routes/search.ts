@@ -6,6 +6,10 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 
+// Import core services
+import { getRetrievalService } from '../../../src/core/retrieval/service.js';
+import type { FileType, SearchFilters } from '../../../src/types/index.js';
+
 const search = new Hono();
 
 // Validation schemas
@@ -32,30 +36,54 @@ search.post('/', zValidator('json', searchSchema), async (c) => {
   const body = c.req.valid('json');
 
   try {
-    // TODO: Connect to actual retrieval service
-    // const retrievalService = getRetrievalService();
-    // const { results, metadata } = await retrievalService.searchWithMetadata({
-    //   query: body.query,
-    //   limit: body.limit,
-    //   threshold: body.threshold,
-    //   rerank: body.rerank,
-    //   expand: body.expand,
-    //   hyde: body.hyde,
-    //   filters: body.filters,
-    // });
+    const retrievalService = getRetrievalService();
 
-    // Placeholder response
+    // Convert filters to proper types
+    let filters: SearchFilters | undefined;
+    if (body.filters) {
+      filters = {
+        documentIds: body.filters.documentIds,
+        fileTypes: body.filters.fileTypes as FileType[] | undefined,
+        dateFrom: body.filters.dateFrom ? new Date(body.filters.dateFrom) : undefined,
+        dateTo: body.filters.dateTo ? new Date(body.filters.dateTo) : undefined,
+      };
+    }
+
+    const { results, metadata } = await retrievalService.searchWithMetadata({
+      query: body.query,
+      limit: body.limit,
+      threshold: body.threshold,
+      rerank: body.rerank,
+      expand: body.expand,
+      hyde: body.hyde,
+      filters,
+    });
+
+    // Serialize results for API response
+    const serializedResults = results.map(r => ({
+      chunkId: r.chunkId,
+      documentId: r.documentId,
+      content: r.content,
+      score: Math.round(Math.max(0, Math.min(1, r.score)) * 1000) / 1000,
+      document: {
+        filename: r.document.filename,
+        filepath: r.document.filepath,
+        fileType: r.document.fileType,
+      },
+      metadata: r.metadata,
+    }));
+
     return c.json({
       success: true,
       data: {
-        results: [],
+        results: serializedResults,
         metadata: {
-          query: body.query,
-          rerankUsed: body.rerank,
-          hydeUsed: body.hyde,
-          queryExpanded: body.expand,
-          originalQuery: body.query,
-          totalResults: 0,
+          query: metadata.originalQuery,
+          rerankUsed: metadata.rerankUsed,
+          hydeUsed: metadata.hydeUsed,
+          queryExpanded: metadata.queryExpanded,
+          originalQuery: metadata.originalQuery,
+          totalResults: results.length,
         },
       },
     });

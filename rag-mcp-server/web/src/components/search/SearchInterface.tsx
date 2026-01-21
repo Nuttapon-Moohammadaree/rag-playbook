@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import { Search, FileText, RefreshCw, Settings2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { searchDocuments, type SearchResult } from '../../api/client';
+import { SearchResultSkeleton } from '../ui/Skeleton';
 
 export default function SearchInterface() {
   const [query, setQuery] = useState('');
@@ -129,8 +130,20 @@ export default function SearchInterface() {
         </div>
       )}
 
+      {/* Loading State */}
+      {searchMutation.isPending && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-medium text-gray-900">
+              Searching...
+            </h3>
+          </div>
+          <SearchResultSkeleton />
+        </div>
+      )}
+
       {/* Results */}
-      {searchMutation.isSuccess && (
+      {searchMutation.isSuccess && !searchMutation.isPending && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-medium text-gray-900">

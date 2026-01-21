@@ -6,8 +6,10 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 
-// Import core services (these will need to be properly connected)
-// For now, we'll create placeholder implementations
+// Import core services
+import { getIngestionService } from '../../../src/core/ingestion/service.js';
+import { getAllDocuments, getDocumentById } from '../../../src/storage/sqlite.js';
+import type { Document } from '../../../src/types/index.js';
 
 const documents = new Hono();
 
@@ -34,25 +36,56 @@ documents.post('/upload', zValidator('json', uploadSchema), async (c) => {
   const body = c.req.valid('json');
 
   try {
-    // TODO: Connect to actual ingestion service
-    // const ingestionService = getIngestionService();
-    // const result = await ingestionService.indexDocument(body.filepath, body);
+    const ingestionService = getIngestionService();
+    const result = await ingestionService.indexDocument(body.filepath, {
+      chunkSize: body.chunkSize,
+      chunkOverlap: body.chunkOverlap,
+    });
 
-    // Placeholder response
+    if (result.status === 'failed') {
+      return c.json({
+        success: false,
+        error: result.error || 'Document indexing failed',
+      }, 400);
+    }
+
     return c.json({
       success: true,
       data: {
-        documentId: `doc-${Date.now()}`,
-        filename: body.filepath.split('/').pop(),
-        status: 'processing',
-        message: 'Document queued for indexing',
+        documentId: result.documentId,
+        filename: result.filename,
+        status: result.status,
+        chunkCount: result.chunkCount,
+        message: 'Document indexed successfully',
       },
-    }, 202);
+    }, result.status === 'success' ? 201 : 202);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Upload failed';
     return c.json({ success: false, error: message }, 500);
   }
 });
+
+/**
+ * Serialize a Document for API response
+ */
+function serializeDocument(doc: Document) {
+  return {
+    id: doc.id,
+    filename: doc.filename,
+    filepath: doc.filepath,
+    fileType: doc.fileType,
+    fileSize: doc.fileSize,
+    mimeType: doc.mimeType,
+    status: doc.status,
+    chunkCount: doc.chunkCount,
+    createdAt: doc.createdAt.toISOString(),
+    updatedAt: doc.updatedAt.toISOString(),
+    indexedAt: doc.indexedAt?.toISOString() ?? null,
+    summary: doc.summary,
+    tags: doc.tags,
+    metadata: doc.metadata,
+  };
+}
 
 /**
  * List documents
@@ -62,20 +95,30 @@ documents.get('/', zValidator('query', listQuerySchema), async (c) => {
   const query = c.req.valid('query');
 
   try {
-    // TODO: Connect to actual storage service
-    // const storage = getSQLiteStorage();
-    // const { documents, total } = await storage.listDocuments(query);
+    let docs = getAllDocuments();
 
-    // Placeholder response
+    // Apply filters
+    if (query.status) {
+      docs = docs.filter(d => d.status === query.status);
+    }
+    if (query.fileType) {
+      docs = docs.filter(d => d.fileType === query.fileType);
+    }
+
+    const total = docs.length;
+
+    // Apply pagination
+    const paginatedDocs = docs.slice(query.offset, query.offset + query.limit);
+
     return c.json({
       success: true,
       data: {
-        documents: [],
+        documents: paginatedDocs.map(serializeDocument),
         pagination: {
-          total: 0,
+          total,
           limit: query.limit,
           offset: query.offset,
-          hasMore: false,
+          hasMore: query.offset + query.limit < total,
         },
       },
     });
@@ -93,15 +136,19 @@ documents.get('/:id', async (c) => {
   const id = c.req.param('id');
 
   try {
-    // TODO: Connect to actual storage service
-    // const storage = getSQLiteStorage();
-    // const document = await storage.getDocument(id);
+    const doc = getDocumentById(id);
 
-    // Placeholder - return 404 for now
+    if (!doc) {
+      return c.json({
+        success: false,
+        error: `Document ${id} not found`,
+      }, 404);
+    }
+
     return c.json({
-      success: false,
-      error: `Document ${id} not found`,
-    }, 404);
+      success: true,
+      data: serializeDocument(doc),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to get document';
     return c.json({ success: false, error: message }, 500);
@@ -116,16 +163,30 @@ documents.delete('/:id', async (c) => {
   const id = c.req.param('id');
 
   try {
-    // TODO: Connect to actual ingestion service
-    // const ingestionService = getIngestionService();
-    // await ingestionService.deleteDocument(id);
+    // Check if document exists first
+    const doc = getDocumentById(id);
+    if (!doc) {
+      return c.json({
+        success: false,
+        error: `Document ${id} not found`,
+      }, 404);
+    }
 
-    // Placeholder response
+    const ingestionService = getIngestionService();
+    const deleted = await ingestionService.deleteDocument(id);
+
+    if (!deleted) {
+      return c.json({
+        success: false,
+        error: `Failed to delete document ${id}`,
+      }, 500);
+    }
+
     return c.json({
       success: true,
       data: {
         documentId: id,
-        message: 'Document deletion queued',
+        message: 'Document deleted successfully',
       },
     });
   } catch (error) {

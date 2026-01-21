@@ -4,6 +4,7 @@ import { Upload, Trash2, RefreshCw, FileText, File } from 'lucide-react';
 import { clsx } from 'clsx';
 import { listDocuments, deleteDocument, type Document } from '../../api/client';
 import UploadPanel from './UploadPanel';
+import { DocumentTableSkeleton } from '../ui/Skeleton';
 
 const fileTypeIcons: Record<string, typeof FileText> = {
   pdf: FileText,
@@ -91,10 +92,7 @@ export default function DocumentsPanel() {
 
       {/* Documents List */}
       {isLoading ? (
-        <div className="card p-8 text-center">
-          <RefreshCw className="w-8 h-8 text-gray-400 animate-spin mx-auto" />
-          <p className="mt-2 text-gray-500">Loading documents...</p>
-        </div>
+        <DocumentTableSkeleton />
       ) : documents.length === 0 ? (
         <div className="card p-8 text-center">
           <FileText className="w-12 h-12 text-gray-300 mx-auto" />

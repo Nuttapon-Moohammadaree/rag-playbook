@@ -1,0 +1,676 @@
+openapi: 3.0.3
+info:
+  title: RAG MCP Server API
+  description: |
+    REST API for the RAG MCP Server - a semantic document search system
+    with embedding-based retrieval, cross-encoder reranking, and LLM-powered
+    question answering with optional verification.
+  version: 1.0.0
+  contact:
+    name: RAG MCP Server
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:3001/api
+    description: Local development server
+
+tags:
+  - name: health
+    description: Health check endpoints
+  - name: documents
+    description: Document management operations
+  - name: search
+    description: Semantic search operations
+  - name: ask
+    description: Question answering with RAG
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Check if the API is running and healthy
+      tags:
+        - health
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                        example: healthy
+                      timestamp:
+                        type: string
+                        format: date-time
+                      version:
+                        type: string
+                        example: '1.0.0'
+
+  /documents/upload:
+    post:
+      summary: Index a document
+      description: |
+        Index a document from the server filesystem. The document will be
+        parsed, chunked, embedded, and stored in the vector database.
+      tags:
+        - documents
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadRequest'
+      responses:
+        '201':
+          description: Document indexed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadResponse'
+        '400':
+          description: Invalid request or indexing failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /documents:
+    get:
+      summary: List documents
+      description: Retrieve a paginated list of indexed documents
+      tags:
+        - documents
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of documents to return
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          description: Number of documents to skip
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: status
+          in: query
+          description: Filter by document status
+          schema:
+            type: string
+            enum: [pending, processing, indexed, failed]
+        - name: fileType
+          in: query
+          description: Filter by file type
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of documents
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentListResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /documents/{id}:
+    get:
+      summary: Get document by ID
+      description: Retrieve a single document by its ID
+      tags:
+        - documents
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Document ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Document found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentResponse'
+        '404':
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Delete document
+      description: Delete a document and all its chunks from the index
+      tags:
+        - documents
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Document ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Document deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      documentId:
+                        type: string
+                      message:
+                        type: string
+                        example: Document deleted successfully
+        '404':
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /search:
+    post:
+      summary: Search documents
+      description: |
+        Perform semantic search across indexed documents. Supports
+        optional reranking, query expansion, and HyDE (Hypothetical
+        Document Embeddings).
+      tags:
+        - search
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /ask:
+    post:
+      summary: Ask a question
+      description: |
+        Ask a question using RAG (Retrieval-Augmented Generation).
+        The system retrieves relevant document chunks and uses an LLM
+        to generate an answer. Optional verification provides grounding
+        scores and citations.
+      tags:
+        - ask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AskRequest'
+      responses:
+        '200':
+          description: Answer generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AskResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    UploadRequest:
+      type: object
+      required:
+        - filepath
+      properties:
+        filepath:
+          type: string
+          description: Absolute path to the document on the server
+          example: /data/documents/report.pdf
+        chunkSize:
+          type: integer
+          minimum: 50
+          maximum: 10000
+          description: Size of text chunks in characters
+          example: 500
+        chunkOverlap:
+          type: integer
+          minimum: 0
+          maximum: 1000
+          description: Overlap between consecutive chunks
+          example: 50
+        metadata:
+          type: object
+          description: Additional metadata to associate with the document
+          additionalProperties: true
+
+    UploadResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            documentId:
+              type: string
+              format: uuid
+            filename:
+              type: string
+              example: report.pdf
+            status:
+              type: string
+              enum: [success, processing]
+            chunkCount:
+              type: integer
+              example: 25
+            message:
+              type: string
+              example: Document indexed successfully
+
+    Document:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        filename:
+          type: string
+        filepath:
+          type: string
+        fileType:
+          type: string
+          enum: [txt, md, docx, pdf, pptx, xlsx, csv, html, json, rtf]
+        fileSize:
+          type: integer
+          description: File size in bytes
+        mimeType:
+          type: string
+        status:
+          type: string
+          enum: [pending, processing, indexed, failed]
+        chunkCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        indexedAt:
+          type: string
+          format: date-time
+          nullable: true
+        summary:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+
+    DocumentResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/Document'
+
+    DocumentListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            documents:
+              type: array
+              items:
+                $ref: '#/components/schemas/Document'
+            pagination:
+              type: object
+              properties:
+                total:
+                  type: integer
+                limit:
+                  type: integer
+                offset:
+                  type: integer
+                hasMore:
+                  type: boolean
+
+    SearchRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: Search query
+          example: How does the authentication system work?
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 10
+          description: Maximum number of results
+        threshold:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.5
+          description: Minimum similarity score threshold
+        rerank:
+          type: boolean
+          default: true
+          description: Enable cross-encoder reranking
+        expand:
+          type: boolean
+          default: false
+          description: Enable query expansion
+        hyde:
+          type: boolean
+          default: false
+          description: Enable HyDE (Hypothetical Document Embeddings)
+        filters:
+          type: object
+          properties:
+            documentIds:
+              type: array
+              items:
+                type: string
+              description: Filter by document IDs
+            fileTypes:
+              type: array
+              items:
+                type: string
+              description: Filter by file types
+            dateFrom:
+              type: string
+              format: date-time
+              description: Filter documents created after this date
+            dateTo:
+              type: string
+              format: date-time
+              description: Filter documents created before this date
+
+    SearchResult:
+      type: object
+      properties:
+        chunkId:
+          type: string
+          format: uuid
+        documentId:
+          type: string
+          format: uuid
+        content:
+          type: string
+          description: The text content of the chunk
+        score:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Similarity score (0-1)
+        document:
+          type: object
+          properties:
+            filename:
+              type: string
+            filepath:
+              type: string
+            fileType:
+              type: string
+        metadata:
+          type: object
+          additionalProperties: true
+
+    SearchResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            results:
+              type: array
+              items:
+                $ref: '#/components/schemas/SearchResult'
+            metadata:
+              type: object
+              properties:
+                query:
+                  type: string
+                rerankUsed:
+                  type: boolean
+                hydeUsed:
+                  type: boolean
+                queryExpanded:
+                  type: boolean
+                originalQuery:
+                  type: string
+                totalResults:
+                  type: integer
+
+    AskRequest:
+      type: object
+      required:
+        - question
+      properties:
+        question:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: Question to ask
+          example: What is the purpose of the authentication middleware?
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 5
+          description: Maximum number of source chunks to retrieve
+        threshold:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.5
+          description: Minimum similarity threshold for retrieval
+        model:
+          type: string
+          description: LLM model to use for answer generation
+          example: gpt-oss-120b
+        rerank:
+          type: boolean
+          default: true
+          description: Enable cross-encoder reranking
+        verify:
+          type: boolean
+          default: false
+          description: Enable verification pipeline with grounding scores
+
+    Verification:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        groundingScore:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Overall grounding score (0-1)
+        isGrounded:
+          type: boolean
+          description: Whether the answer is well-grounded in sources
+        unsupportedClaims:
+          type: array
+          items:
+            type: string
+          description: List of claims not supported by sources
+        citations:
+          type: array
+          items:
+            type: object
+            properties:
+              chunkId:
+                type: string
+              filename:
+                type: string
+              quote:
+                type: string
+              relevanceScore:
+                type: number
+        chunksFiltered:
+          type: integer
+          description: Number of chunks filtered for low relevance
+        verificationTimeMs:
+          type: integer
+          description: Time spent on verification in milliseconds
+
+    AskResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            answer:
+              type: string
+              description: Generated answer
+            sources:
+              type: array
+              items:
+                type: object
+                properties:
+                  filename:
+                    type: string
+                  filepath:
+                    type: string
+                  content:
+                    type: string
+                    description: Truncated content preview
+                  score:
+                    type: number
+            model:
+              type: string
+              description: Model used for generation
+            usage:
+              type: object
+              properties:
+                llm:
+                  type: object
+                  properties:
+                    promptTokens:
+                      type: integer
+                    completionTokens:
+                      type: integer
+                    totalTokens:
+                      type: integer
+            metadata:
+              type: object
+              properties:
+                question:
+                  type: string
+                rerankUsed:
+                  type: boolean
+                hydeUsed:
+                  type: boolean
+                queryExpanded:
+                  type: boolean
+                verificationEnabled:
+                  type: boolean
+            verification:
+              $ref: '#/components/schemas/Verification'
+            confidence:
+              type: number
+              minimum: 0
+              maximum: 1
+              description: Confidence score based on verification
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          description: Error message
+          example: Document not found

@@ -31,9 +31,10 @@ export default function UploadPanel({ onClose }: UploadPanelProps) {
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
-      // In a real implementation, this would upload the file
-      // For now, we just show the filename
+      // Display the filename to help users understand what they selected
+      // Note: This UI indexes files by server path, not browser upload
       setFilepath(acceptedFiles[0].name);
+      setError('Note: Please enter the server path where this file is located');
     }
   }, []);
 
@@ -64,7 +65,7 @@ export default function UploadPanel({ onClose }: UploadPanelProps) {
   return (
     <div className="card p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-medium text-gray-900">Upload Document</h3>
+        <h3 className="text-lg font-medium text-gray-900">Index Document</h3>
         <button
           onClick={onClose}
           className="text-gray-400 hover:text-gray-600"
@@ -88,21 +89,21 @@ export default function UploadPanel({ onClose }: UploadPanelProps) {
           <Upload className="w-10 h-10 text-gray-400 mx-auto" />
           <p className="mt-2 text-sm text-gray-600">
             {isDragActive
-              ? 'Drop the file here...'
-              : 'Drag & drop a file here, or click to select'}
+              ? 'Drop to see filename...'
+              : 'Drop a file to see its name (helps you find the server path)'}
           </p>
           <p className="mt-1 text-xs text-gray-500">
-            Supports: PDF, TXT, MD, DOCX, CSV, JSON, HTML
+            Note: Enter the server file path below to index the document
           </p>
         </div>
 
-        {/* Or separator */}
+        {/* Separator */}
         <div className="relative">
           <div className="absolute inset-0 flex items-center">
             <div className="w-full border-t border-gray-300" />
           </div>
           <div className="relative flex justify-center text-sm">
-            <span className="px-2 bg-white text-gray-500">Or enter file path</span>
+            <span className="px-2 bg-white text-gray-500">Enter server file path</span>
           </div>
         </div>
 
@@ -154,7 +155,7 @@ export default function UploadPanel({ onClose }: UploadPanelProps) {
             ) : (
               <>
                 <FileText className="w-4 h-4 mr-2" />
-                Upload & Index
+                Index Document
               </>
             )}
           </button>
