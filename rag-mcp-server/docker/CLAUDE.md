@@ -7,6 +7,7 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #1320 | 4:29 PM | 🔵 | Production RAG Stack Configuration Revealed | ~319 |
 | #1113 | 1:59 PM | 🔴 | Dockerfile Modified to Rebuild Native Modules in Production Stage | ~343 |
 | #1112 | " | 🔵 | Dockerfile Uses Node Alpine Copying Pre-Built Native Modules | ~365 |
 | #1103 | 1:55 PM | ✅ | Added Environment Variable Passthrough for Embedding Configuration | ~331 |
