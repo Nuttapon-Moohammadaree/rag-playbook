@@ -7,8 +7,18 @@ import {
   TrendingUp,
   Activity,
   RefreshCw,
+  AlertTriangle,
 } from 'lucide-react';
 import { clsx } from 'clsx';
+import {
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+  AreaChart,
+  Area,
+} from 'recharts';
 import {
   getAnalyticsStats,
   getQueryTrends,
@@ -66,40 +76,159 @@ interface TrendChartProps {
 
 function TrendChart({ data, loading }: TrendChartProps) {
   if (loading) {
-    return <div className="h-48 bg-gray-100 animate-pulse rounded" />;
+    return <div className="h-64 bg-gray-100 animate-pulse rounded" />;
   }
 
   if (data.length === 0) {
     return (
-      <div className="h-48 flex items-center justify-center text-gray-500 text-sm">
+      <div className="h-64 flex items-center justify-center text-gray-500 text-sm">
         No query data available yet
       </div>
     );
   }
 
-  const maxCount = Math.max(...data.map((d) => d.totalCount), 1);
+  // Format data for Recharts
+  const chartData = data.map(d => ({
+    ...d,
+    date: new Date(d.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+  }));
 
   return (
-    <div className="h-48 flex items-end space-x-2">
-      {data.map((day, i) => (
-        <div key={i} className="flex-1 flex flex-col items-center">
-          <div className="w-full flex flex-col-reverse gap-1 h-40">
-            <div
-              className="bg-blue-500 rounded-t transition-all"
-              style={{ height: `${(day.searchCount / maxCount) * 100}%` }}
-              title={`Search: ${day.searchCount}`}
-            />
-            <div
-              className="bg-purple-500 rounded-t transition-all"
-              style={{ height: `${(day.askCount / maxCount) * 100}%` }}
-              title={`Ask: ${day.askCount}`}
-            />
+    <ResponsiveContainer width="100%" height={256}>
+      <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+        <defs>
+          <linearGradient id="colorSearch" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+          </linearGradient>
+          <linearGradient id="colorAsk" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
+            <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+          </linearGradient>
+        </defs>
+        <XAxis
+          dataKey="date"
+          stroke="#94a3b8"
+          fontSize={11}
+          tickLine={false}
+          axisLine={false}
+        />
+        <YAxis
+          stroke="#94a3b8"
+          fontSize={11}
+          tickLine={false}
+          axisLine={false}
+          width={30}
+        />
+        <Tooltip
+          contentStyle={{
+            backgroundColor: '#1e293b',
+            border: 'none',
+            borderRadius: '8px',
+            color: '#e2e8f0',
+            fontSize: '12px',
+          }}
+        />
+        <Legend
+          wrapperStyle={{ fontSize: '12px' }}
+          iconType="circle"
+          iconSize={8}
+        />
+        <Area
+          type="monotone"
+          dataKey="searchCount"
+          name="Search"
+          stroke="#3b82f6"
+          strokeWidth={2}
+          fillOpacity={1}
+          fill="url(#colorSearch)"
+        />
+        <Area
+          type="monotone"
+          dataKey="askCount"
+          name="Ask"
+          stroke="#8b5cf6"
+          strokeWidth={2}
+          fillOpacity={1}
+          fill="url(#colorAsk)"
+        />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+// Knowledge Gaps component
+interface KnowledgeGap {
+  query: string;
+  count: number;
+  lastUsed: string;
+}
+
+function KnowledgeGapsCard({ recentQueries }: { recentQueries: QueryLogEntry[] }) {
+  // Find queries with 0 results
+  const gaps = recentQueries
+    .filter(q => q.resultCount === 0)
+    .reduce((acc, q) => {
+      const existing = acc.find(g => g.query === q.query);
+      if (existing) {
+        existing.count++;
+        if (new Date(q.createdAt) > new Date(existing.lastUsed)) {
+          existing.lastUsed = q.createdAt;
+        }
+      } else {
+        acc.push({ query: q.query, count: 1, lastUsed: q.createdAt });
+      }
+      return acc;
+    }, [] as KnowledgeGap[])
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  if (gaps.length === 0) {
+    return (
+      <div className="card p-6">
+        <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center">
+          <AlertTriangle className="w-5 h-5 text-amber-500 mr-2" />
+          Knowledge Gaps
+        </h3>
+        <div className="text-center py-6">
+          <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+            <svg className="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
           </div>
-          <span className="text-xs text-gray-400 mt-2">
-            {new Date(day.date).toLocaleDateString(undefined, { weekday: 'short' })}
-          </span>
+          <p className="text-sm text-gray-600">No knowledge gaps detected!</p>
+          <p className="text-xs text-gray-400 mt-1">All recent queries found results</p>
         </div>
-      ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="card p-6">
+      <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center">
+        <AlertTriangle className="w-5 h-5 text-amber-500 mr-2" />
+        Knowledge Gaps
+        <span className="ml-2 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full">
+          {gaps.length}
+        </span>
+      </h3>
+      <p className="text-xs text-gray-500 mb-4">
+        Queries that returned no results - consider adding content for these topics
+      </p>
+      <div className="space-y-3">
+        {gaps.map((gap, i) => (
+          <div key={i} className="flex items-center justify-between p-3 bg-amber-50 rounded-lg">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-gray-900 truncate" title={gap.query}>
+                "{gap.query}"
+              </p>
+              <p className="text-xs text-gray-500">
+                {gap.count}x searched
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -207,6 +336,9 @@ export default function AnalyticsPanel() {
           loading={statsLoading}
         />
       </div>
+
+      {/* Knowledge Gaps */}
+      <KnowledgeGapsCard recentQueries={recentQueries} />
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

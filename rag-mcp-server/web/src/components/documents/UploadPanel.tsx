@@ -1,21 +1,21 @@
 import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { X, Upload, FileText, AlertCircle, RefreshCw } from 'lucide-react';
+import { X, Upload, FileText, AlertCircle, RefreshCw, CheckCircle } from 'lucide-react';
 import { clsx } from 'clsx';
-import { uploadDocument } from '../../api/client';
+import { uploadFile } from '../../api/client';
 
 interface UploadPanelProps {
   onClose: () => void;
 }
 
 export default function UploadPanel({ onClose }: UploadPanelProps) {
-  const [filepath, setFilepath] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const uploadMutation = useMutation({
-    mutationFn: (path: string) => uploadDocument(path),
+    mutationFn: (file: File) => uploadFile(file),
     onSuccess: (response) => {
       if (response.success) {
         queryClient.invalidateQueries({ queryKey: ['documents'] });
@@ -31,10 +31,8 @@ export default function UploadPanel({ onClose }: UploadPanelProps) {
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
-      // Display the filename to help users understand what they selected
-      // Note: This UI indexes files by server path, not browser upload
-      setFilepath(acceptedFiles[0].name);
-      setError('Note: Please enter the server path where this file is located');
+      setSelectedFile(acceptedFiles[0]);
+      setError(null);
     }
   }, []);
 
@@ -45,27 +43,35 @@ export default function UploadPanel({ onClose }: UploadPanelProps) {
       'text/markdown': ['.md'],
       'application/pdf': ['.pdf'],
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'],
       'text/csv': ['.csv'],
       'application/json': ['.json'],
       'text/html': ['.html'],
     },
     maxFiles: 1,
+    maxSize: 50 * 1024 * 1024, // 50MB max
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!filepath.trim()) {
-      setError('Please enter a file path');
+    if (!selectedFile) {
+      setError('Please select a file to upload');
       return;
     }
     setError(null);
-    uploadMutation.mutate(filepath.trim());
+    uploadMutation.mutate(selectedFile);
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
   return (
     <div className="card p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-medium text-gray-900">Index Document</h3>
+        <h3 className="text-lg font-medium text-gray-900">Upload Document</h3>
         <button
           onClick={onClose}
           className="text-gray-400 hover:text-gray-600"
@@ -82,53 +88,41 @@ export default function UploadPanel({ onClose }: UploadPanelProps) {
             'border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors',
             isDragActive
               ? 'border-primary-500 bg-primary-50'
+              : selectedFile
+              ? 'border-green-500 bg-green-50'
               : 'border-gray-300 hover:border-gray-400'
           )}
         >
           <input {...getInputProps()} />
-          <Upload className="w-10 h-10 text-gray-400 mx-auto" />
-          <p className="mt-2 text-sm text-gray-600">
-            {isDragActive
-              ? 'Drop to see filename...'
-              : 'Drop a file to see its name (helps you find the server path)'}
-          </p>
-          <p className="mt-1 text-xs text-gray-500">
-            Note: Enter the server file path below to index the document
-          </p>
-        </div>
-
-        {/* Separator */}
-        <div className="relative">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-gray-300" />
-          </div>
-          <div className="relative flex justify-center text-sm">
-            <span className="px-2 bg-white text-gray-500">Enter server file path</span>
-          </div>
-        </div>
-
-        {/* Manual file path input */}
-        <div>
-          <label htmlFor="filepath" className="block text-sm font-medium text-gray-700 mb-1">
-            File Path
-          </label>
-          <input
-            type="text"
-            id="filepath"
-            value={filepath}
-            onChange={(e) => setFilepath(e.target.value)}
-            placeholder="/path/to/document.pdf"
-            className="input"
-          />
-          <p className="mt-1 text-xs text-gray-500">
-            Enter the absolute path to the document on the server
-          </p>
+          {selectedFile ? (
+            <>
+              <CheckCircle className="w-10 h-10 text-green-500 mx-auto" />
+              <p className="mt-2 text-sm font-medium text-gray-900">
+                {selectedFile.name}
+              </p>
+              <p className="mt-1 text-xs text-gray-500">
+                {formatFileSize(selectedFile.size)} • Click or drag to replace
+              </p>
+            </>
+          ) : (
+            <>
+              <Upload className="w-10 h-10 text-gray-400 mx-auto" />
+              <p className="mt-2 text-sm text-gray-600">
+                {isDragActive
+                  ? 'Drop the file here...'
+                  : 'Drag & drop a file here, or click to select'}
+              </p>
+              <p className="mt-1 text-xs text-gray-500">
+                Supported: PDF, DOCX, PPTX, TXT, MD, CSV, JSON, HTML (max 50MB)
+              </p>
+            </>
+          )}
         </div>
 
         {/* Error message */}
         {error && (
           <div className="flex items-center space-x-2 text-red-600 text-sm">
-            <AlertCircle className="w-4 h-4" />
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
             <span>{error}</span>
           </div>
         )}
@@ -144,8 +138,8 @@ export default function UploadPanel({ onClose }: UploadPanelProps) {
           </button>
           <button
             type="submit"
-            disabled={uploadMutation.isPending}
-            className="btn-primary"
+            disabled={uploadMutation.isPending || !selectedFile}
+            className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {uploadMutation.isPending ? (
               <>
@@ -155,7 +149,7 @@ export default function UploadPanel({ onClose }: UploadPanelProps) {
             ) : (
               <>
                 <FileText className="w-4 h-4 mr-2" />
-                Index Document
+                Upload & Index
               </>
             )}
           </button>

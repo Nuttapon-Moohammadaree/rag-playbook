@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Upload, Trash2, RefreshCw, FileText, File } from 'lucide-react';
+import { Upload, Trash2, RefreshCw, FileText, File, Eye } from 'lucide-react';
 import { clsx } from 'clsx';
 import { listDocuments, deleteDocument, type Document } from '../../api/client';
 import UploadPanel from './UploadPanel';
@@ -21,7 +21,11 @@ const statusColors: Record<string, string> = {
   failed: 'badge-error',
 };
 
-export default function DocumentsPanel() {
+interface DocumentsPanelProps {
+  onViewDocument?: (documentId: string) => void;
+}
+
+export default function DocumentsPanel({ onViewDocument }: DocumentsPanelProps) {
   const [showUpload, setShowUpload] = useState(false);
   const queryClient = useQueryClient();
 
@@ -135,7 +139,18 @@ export default function DocumentsPanel() {
               {documents.map((doc: Document) => {
                 const Icon = fileTypeIcons[doc.fileType] || fileTypeIcons.default;
                 return (
-                  <tr key={doc.id} className="hover:bg-gray-50">
+                  <tr
+                    key={doc.id}
+                    className={clsx(
+                      'hover:bg-gray-50 transition-colors',
+                      onViewDocument && doc.status === 'indexed' && 'cursor-pointer'
+                    )}
+                    onClick={() => {
+                      if (onViewDocument && doc.status === 'indexed') {
+                        onViewDocument(doc.id);
+                      }
+                    }}
+                  >
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <Icon className="w-5 h-5 text-gray-400 mr-3" />
@@ -162,13 +177,31 @@ export default function DocumentsPanel() {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right">
-                      <button
-                        onClick={() => handleDelete(doc.id, doc.filename)}
-                        className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50"
-                        disabled={deleteMutation.isPending}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center justify-end space-x-2">
+                        {onViewDocument && doc.status === 'indexed' && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onViewDocument(doc.id);
+                            }}
+                            className="text-primary-600 hover:text-primary-800 p-1 rounded hover:bg-primary-50"
+                            title="View document"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                        )}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(doc.id, doc.filename);
+                          }}
+                          className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50"
+                          disabled={deleteMutation.isPending}
+                          title="Delete document"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

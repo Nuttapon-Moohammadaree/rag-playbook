@@ -28,6 +28,10 @@ export interface Document {
   chunkCount: number;
   createdAt: string;
   updatedAt: string;
+  indexedAt?: string;
+  summary?: string;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
 }
 
 export interface SearchResult {
@@ -185,6 +189,61 @@ export async function uploadDocument(
     method: 'POST',
     body: JSON.stringify({ filepath, ...options }),
   });
+}
+
+/**
+ * Upload a file directly via multipart form data
+ */
+export async function uploadFile(file: File): Promise<ApiResponse<{
+  documentId: string;
+  filename: string;
+  status: string;
+  chunkCount: number;
+  message: string;
+}>> {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${API_BASE}/documents/upload-file`, {
+      method: 'POST',
+      body: formData,
+      // Don't set Content-Type header - browser will set it with boundary for multipart
+    });
+
+    let data: unknown;
+    const contentType = response.headers.get('content-type');
+
+    if (contentType?.includes('application/json')) {
+      data = await response.json();
+    } else {
+      const text = await response.text();
+      data = { error: text || 'Unknown error' };
+    }
+
+    if (!response.ok) {
+      const errorMessage = typeof data === 'object' && data !== null
+        ? (data as Record<string, unknown>).error as string || 'Upload failed'
+        : 'Upload failed';
+      return {
+        success: false,
+        error: errorMessage,
+      };
+    }
+
+    return data as ApiResponse<{
+      documentId: string;
+      filename: string;
+      status: string;
+      chunkCount: number;
+      message: string;
+    }>;
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Upload failed',
+    };
+  }
 }
 
 export async function listDocuments(params?: {
@@ -399,4 +458,112 @@ export async function getRecentQueries(limit: number = 100, type?: 'search' | 'a
     queries: QueryLogEntry[];
     total: number;
   }>(`/analytics/queries?${params.toString()}`);
+}
+
+// Graph types
+export interface GraphNode {
+  id: string;
+  type: string;
+  label: string;
+  tags: string[];
+  collection?: string;
+  color: string;
+  chunkCount: number;
+  fileSize: number;
+  x?: number;
+  y?: number;
+  vx?: number;
+  vy?: number;
+}
+
+export interface GraphLink {
+  source: string;
+  target: string;
+  type: string;
+  weight: number;
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  links: GraphLink[];
+  stats: {
+    nodeCount: number;
+    linkCount: number;
+  };
+}
+
+export interface RandomDocument {
+  id: string;
+  filename: string;
+  fileType: string;
+  summary?: string;
+  tags?: string[];
+  chunkCount: number;
+  createdAt: string;
+}
+
+// Graph APIs
+export async function getGraph(params?: { collection?: string; limit?: number }) {
+  const query = new URLSearchParams();
+  if (params?.collection) query.set('collection', params.collection);
+  if (params?.limit) query.set('limit', String(params.limit));
+
+  const queryString = query.toString();
+  return fetchApi<GraphData>(`/graph${queryString ? `?${queryString}` : ''}`);
+}
+
+export async function getDocumentGraph(documentId: string) {
+  return fetchApi<{
+    centerDocument: {
+      id: string;
+      filename: string;
+      summary?: string;
+    };
+    nodes: GraphNode[];
+    links: GraphLink[];
+  }>(`/graph/document/${documentId}`);
+}
+
+export async function getRandomDocument() {
+  return fetchApi<RandomDocument>('/graph/random');
+}
+
+// Document detail with chunks
+export async function getDocumentWithChunks(id: string) {
+  return fetchApi<Document & { chunks?: Array<{ id: string; content: string; chunkIndex: number }> }>(`/documents/${id}`);
+}
+
+// Document content with full content from chunks
+export interface DocumentContent extends Document {
+  chunks: Array<{
+    id: string;
+    content: string;
+    chunkIndex: number;
+    tokenCount: number;
+  }>;
+  fullContent: string;
+}
+
+export async function getDocumentContent(id: string) {
+  return fetchApi<DocumentContent>(`/documents/${id}/content`);
+}
+
+// Document neighbors for navigation
+export interface DocumentNeighbors {
+  current: { id: string; filename: string; index: number };
+  prev: { id: string; filename: string } | null;
+  next: { id: string; filename: string } | null;
+  total: number;
+}
+
+export async function getDocumentNeighbors(id: string) {
+  return fetchApi<DocumentNeighbors>(`/documents/${id}/neighbors`);
+}
+
+// Knowledge gaps (queries with 0 results)
+export async function getKnowledgeGaps(limit: number = 50) {
+  return fetchApi<{
+    queries: QueryLogEntry[];
+    total: number;
+  }>(`/analytics/queries?limit=${limit}&minResults=0&maxResults=0`);
 }

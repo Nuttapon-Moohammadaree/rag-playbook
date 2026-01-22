@@ -5,11 +5,17 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
+import { writeFile, mkdir } from 'fs/promises';
+import { join, basename } from 'path';
+import { existsSync } from 'fs';
 
 // Import core services
 import { getIngestionService } from '../../../src/core/ingestion/service.js';
-import { getAllDocuments, getDocumentById } from '../../../src/storage/sqlite.js';
+import { getAllDocuments, getDocumentById, getChunksByDocumentId } from '../../../src/storage/sqlite.js';
 import type { Document } from '../../../src/types/index.js';
+
+// Upload directory for files
+const UPLOAD_DIR = process.env.UPLOAD_DIR || '/app/data/uploads';
 
 const documents = new Hono();
 
@@ -61,6 +67,91 @@ documents.post('/upload', zValidator('json', uploadSchema), async (c) => {
     }, result.status === 'success' ? 201 : 202);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Upload failed';
+    return c.json({ success: false, error: message }, 500);
+  }
+});
+
+/**
+ * Upload file via multipart form data and index it
+ * POST /api/documents/upload-file
+ */
+documents.post('/upload-file', async (c) => {
+  try {
+    const formData = await c.req.formData();
+    const file = formData.get('file');
+
+    if (!file || !(file instanceof File)) {
+      return c.json({
+        success: false,
+        error: 'No file provided. Please upload a file.',
+      }, 400);
+    }
+
+    // Validate file type
+    const allowedTypes = [
+      'text/plain',
+      'text/markdown',
+      'text/csv',
+      'text/html',
+      'application/pdf',
+      'application/json',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'application/msword',
+      'application/vnd.ms-powerpoint',
+    ];
+
+    const allowedExtensions = ['.txt', '.md', '.csv', '.html', '.pdf', '.json', '.docx', '.pptx', '.doc', '.ppt'];
+    const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+
+    if (!allowedExtensions.includes(ext)) {
+      return c.json({
+        success: false,
+        error: `File type not supported. Allowed: ${allowedExtensions.join(', ')}`,
+      }, 400);
+    }
+
+    // Ensure upload directory exists
+    if (!existsSync(UPLOAD_DIR)) {
+      await mkdir(UPLOAD_DIR, { recursive: true });
+    }
+
+    // Generate unique filename to avoid conflicts
+    const timestamp = Date.now();
+    const safeFilename = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const uniqueFilename = `${timestamp}_${safeFilename}`;
+    const filepath = join(UPLOAD_DIR, uniqueFilename);
+
+    // Save file to disk
+    const buffer = await file.arrayBuffer();
+    await writeFile(filepath, Buffer.from(buffer));
+
+    // Index the document
+    const ingestionService = getIngestionService();
+    const result = await ingestionService.indexDocument(filepath, {
+      chunkSize: 512,
+      chunkOverlap: 50,
+    });
+
+    if (result.status === 'failed') {
+      return c.json({
+        success: false,
+        error: result.error || 'Document indexing failed',
+      }, 400);
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        documentId: result.documentId,
+        filename: file.name,
+        status: result.status,
+        chunkCount: result.chunkCount,
+        message: 'Document uploaded and indexed successfully',
+      },
+    }, 201);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'File upload failed';
     return c.json({ success: false, error: message }, 500);
   }
 });
@@ -151,6 +242,92 @@ documents.get('/:id', async (c) => {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to get document';
+    return c.json({ success: false, error: message }, 500);
+  }
+});
+
+/**
+ * Get document with chunks (full content)
+ * GET /api/documents/:id/content
+ */
+documents.get('/:id/content', async (c) => {
+  const id = c.req.param('id');
+
+  try {
+    const doc = getDocumentById(id);
+
+    if (!doc) {
+      return c.json({
+        success: false,
+        error: `Document ${id} not found`,
+      }, 404);
+    }
+
+    // Get all chunks for this document
+    const chunks = getChunksByDocumentId(id)
+      .sort((a, b) => a.chunk_index - b.chunk_index)
+      .map(chunk => ({
+        id: chunk.id,
+        content: chunk.content,
+        chunkIndex: chunk.chunk_index,
+        tokenCount: chunk.token_count,
+      }));
+
+    // Combine chunks into full content
+    const fullContent = chunks.map(c => c.content).join('\n\n---\n\n');
+
+    return c.json({
+      success: true,
+      data: {
+        ...serializeDocument(doc),
+        chunks,
+        fullContent,
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to get document content';
+    return c.json({ success: false, error: message }, 500);
+  }
+});
+
+/**
+ * Get neighboring documents (prev/next) for navigation
+ * GET /api/documents/:id/neighbors
+ */
+documents.get('/:id/neighbors', async (c) => {
+  const id = c.req.param('id');
+
+  try {
+    const doc = getDocumentById(id);
+
+    if (!doc) {
+      return c.json({
+        success: false,
+        error: `Document ${id} not found`,
+      }, 404);
+    }
+
+    // Get all indexed documents sorted by creation date
+    const allDocs = getAllDocuments()
+      .filter(d => d.status === 'indexed')
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    const currentIndex = allDocs.findIndex(d => d.id === id);
+
+    const prev = currentIndex > 0 ? allDocs[currentIndex - 1] : null;
+    const next = currentIndex < allDocs.length - 1 ? allDocs[currentIndex + 1] : null;
+
+    return c.json({
+      success: true,
+      data: {
+        current: { id: doc.id, filename: doc.filename, index: currentIndex },
+        prev: prev ? { id: prev.id, filename: prev.filename } : null,
+        next: next ? { id: next.id, filename: next.filename } : null,
+        total: allDocs.length,
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to get neighbors';
     return c.json({ success: false, error: message }, 500);
   }
 });

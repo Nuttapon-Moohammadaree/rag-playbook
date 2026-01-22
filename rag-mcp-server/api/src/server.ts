@@ -17,6 +17,7 @@ import search from './routes/search.js';
 import ask from './routes/ask.js';
 import collections from './routes/collections.js';
 import analytics from './routes/analytics.js';
+import graph from './routes/graph.js';
 
 export function createApp() {
   const app = new Hono();
@@ -38,6 +39,7 @@ export function createApp() {
   app.route('/api/ask', ask);
   app.route('/api/collections', collections);
   app.route('/api/analytics', analytics);
+  app.route('/api/graph', graph);
 
   // Root endpoint
   app.get('/', (c) => {
@@ -51,6 +53,7 @@ export function createApp() {
         search: '/api/search',
         ask: '/api/ask',
         analytics: '/api/analytics',
+        graph: '/api/graph',
       },
       documentation: '/api/docs',
     });

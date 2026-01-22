@@ -1,15 +1,17 @@
 import { useState } from 'react';
-import { LayoutDashboard, FileText, Search, MessageSquare, Settings, FolderOpen, BarChart3 } from 'lucide-react';
+import { LayoutDashboard, FileText, Search, MessageSquare, Settings, FolderOpen, BarChart3, Network } from 'lucide-react';
 import { clsx } from 'clsx';
 import DashboardPanel from './components/dashboard/DashboardPanel';
 import DocumentsPanel from './components/documents/DocumentsPanel';
+import DocumentDetailPanel from './components/documents/DocumentDetailPanel';
 import CollectionsPanel from './components/collections/CollectionsPanel';
 import SearchInterface from './components/search/SearchInterface';
 import AskInterface from './components/ask/AskInterface';
 import AnalyticsPanel from './components/analytics/AnalyticsPanel';
 import SettingsPanel from './components/settings/SettingsPanel';
+import KnowledgeGraphPanel from './components/graph/KnowledgeGraphPanel';
 
-type Tab = 'dashboard' | 'documents' | 'search' | 'ask' | 'collections' | 'analytics' | 'settings';
+type Tab = 'dashboard' | 'documents' | 'search' | 'ask' | 'collections' | 'analytics' | 'graph' | 'settings';
 
 const tabs: Array<{ id: Tab; label: string; icon: typeof FileText }> = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -18,15 +20,26 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof FileText }> = [
   { id: 'search', label: 'Search', icon: Search },
   { id: 'ask', label: 'Ask', icon: MessageSquare },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+  { id: 'graph', label: 'Graph', icon: Network },
 ];
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
 
   const handleNavigate = (tab: string) => {
-    if (tabs.some(t => t.id === tab) || tab === 'settings') {
+    if (tabs.some(t => t.id === tab) || tab === 'settings' || tab === 'graph') {
+      setSelectedDocumentId(null); // Close document detail when switching tabs
       setActiveTab(tab as Tab);
     }
+  };
+
+  const handleViewDocument = (documentId: string) => {
+    setSelectedDocumentId(documentId);
+  };
+
+  const handleCloseDocument = () => {
+    setSelectedDocumentId(null);
   };
 
   return (
@@ -84,13 +97,24 @@ export default function App() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {activeTab === 'dashboard' && <DashboardPanel onNavigate={handleNavigate} />}
-        {activeTab === 'documents' && <DocumentsPanel />}
-        {activeTab === 'collections' && <CollectionsPanel />}
-        {activeTab === 'search' && <SearchInterface />}
-        {activeTab === 'ask' && <AskInterface />}
-        {activeTab === 'analytics' && <AnalyticsPanel />}
-        {activeTab === 'settings' && <SettingsPanel />}
+        {selectedDocumentId ? (
+          <DocumentDetailPanel
+            documentId={selectedDocumentId}
+            onClose={handleCloseDocument}
+            onNavigate={handleViewDocument}
+          />
+        ) : (
+          <>
+            {activeTab === 'dashboard' && <DashboardPanel onNavigate={handleNavigate} />}
+            {activeTab === 'documents' && <DocumentsPanel onViewDocument={handleViewDocument} />}
+            {activeTab === 'collections' && <CollectionsPanel />}
+            {activeTab === 'search' && <SearchInterface />}
+            {activeTab === 'ask' && <AskInterface />}
+            {activeTab === 'analytics' && <AnalyticsPanel />}
+            {activeTab === 'graph' && <KnowledgeGraphPanel />}
+            {activeTab === 'settings' && <SettingsPanel />}
+          </>
+        )}
       </main>
 
       {/* Footer */}

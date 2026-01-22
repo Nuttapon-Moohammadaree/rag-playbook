@@ -9,10 +9,12 @@ import {
   AlertCircle,
   Activity,
   HardDrive,
-  Layers
+  Layers,
+  Network,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { listDocuments, checkHealth, type Document } from '../../api/client';
+import RandomDocument from './RandomDocument';
 
 interface StatCardProps {
   title: string;
@@ -333,28 +335,40 @@ export default function DashboardPanel({ onNavigate }: DashboardPanelProps) {
         </div>
       </div>
 
-      {/* Quick Actions */}
-      <div className="card p-6">
-        <h3 className="text-base font-semibold text-gray-900 mb-4">Quick Actions</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <QuickAction
-            title="Upload Document"
-            description="Add new documents to your knowledge base"
-            icon={Upload}
-            onClick={() => handleNavigate('documents')}
-          />
-          <QuickAction
-            title="Search Documents"
-            description="Find information using semantic search"
-            icon={Search}
-            onClick={() => handleNavigate('search')}
-          />
-          <QuickAction
-            title="Ask Questions"
-            description="Get AI-powered answers from your documents"
-            icon={MessageSquare}
-            onClick={() => handleNavigate('ask')}
-          />
+      {/* Document Spotlight and Quick Actions */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Random Document Spotlight */}
+        <RandomDocument />
+
+        {/* Quick Actions */}
+        <div className="card p-6 lg:col-span-2">
+          <h3 className="text-base font-semibold text-gray-900 mb-4">Quick Actions</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <QuickAction
+              title="Upload"
+              description="Add new documents"
+              icon={Upload}
+              onClick={() => handleNavigate('documents')}
+            />
+            <QuickAction
+              title="Search"
+              description="Semantic search"
+              icon={Search}
+              onClick={() => handleNavigate('search')}
+            />
+            <QuickAction
+              title="Ask"
+              description="AI-powered Q&A"
+              icon={MessageSquare}
+              onClick={() => handleNavigate('ask')}
+            />
+            <QuickAction
+              title="Graph"
+              description="Visualize knowledge"
+              icon={Network}
+              onClick={() => handleNavigate('graph')}
+            />
+          </div>
         </div>
       </div>
     </div>
