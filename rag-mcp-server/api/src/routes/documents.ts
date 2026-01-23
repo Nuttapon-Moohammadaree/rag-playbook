@@ -25,6 +25,7 @@ const uploadSchema = z.object({
   metadata: z.record(z.unknown()).optional(),
   chunkSize: z.number().min(50).max(10000).optional(),
   chunkOverlap: z.number().min(0).max(1000).optional(),
+  force: z.boolean().optional().default(false),
 });
 
 const listQuerySchema = z.object({
@@ -46,6 +47,7 @@ documents.post('/upload', zValidator('json', uploadSchema), async (c) => {
     const result = await ingestionService.indexDocument(body.filepath, {
       chunkSize: body.chunkSize,
       chunkOverlap: body.chunkOverlap,
+      forceReindex: body.force,
     });
 
     if (result.status === 'failed') {
