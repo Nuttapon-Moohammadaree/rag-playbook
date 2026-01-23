@@ -104,10 +104,11 @@ export default function DashboardPanel({ onNavigate }: DashboardPanelProps) {
   });
 
   // Fetch health status
-  const { data: healthData, isLoading: healthLoading } = useQuery({
+  const { data: healthData, isLoading: healthLoading, error: healthError } = useQuery({
     queryKey: ['health'],
     queryFn: checkHealth,
     refetchInterval: 30000, // Refresh every 30 seconds
+    retry: 2,
   });
 
   const documents = docsData?.data?.documents || [];
@@ -137,7 +138,15 @@ export default function DashboardPanel({ onNavigate }: DashboardPanelProps) {
   // Determine system status
   const getSystemStatus = (): 'healthy' | 'degraded' | 'down' | 'loading' => {
     if (healthLoading) return 'loading';
-    if (!healthData?.success) return 'down';
+    if (healthError) {
+      console.error('Health check failed:', healthError);
+      return 'down';
+    }
+    // ApiResponse wrapper has success at top level, data contains the actual health info
+    if (!healthData?.success) {
+      console.warn('Health check returned non-success:', healthData);
+      return 'down';
+    }
     if (stats.failed > 0) return 'degraded';
     return 'healthy';
   };

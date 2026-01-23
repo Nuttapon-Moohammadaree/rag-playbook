@@ -31,6 +31,7 @@ export default function Graph2D({ nodes, links, onNodeClick, width = 800, height
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [localNodes, setLocalNodes] = useState<GraphNode[]>([]);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
   const animationRef = useRef<number>(0);
   const hoveredNodeRef = useRef<GraphNode | null>(null);
 
@@ -263,9 +264,11 @@ export default function Graph2D({ nodes, links, onNodeClick, width = 800, height
 
     if (clicked) {
       setSelectedNode(clicked);
+      setTooltipPosition({ x, y });
       onNodeClick?.(clicked);
     } else {
       setSelectedNode(null);
+      setTooltipPosition(null);
     }
   }, [localNodes, onNodeClick]);
 
@@ -279,8 +282,14 @@ export default function Graph2D({ nodes, links, onNodeClick, width = 800, height
         onMouseMove={handleMouseMove}
         className="rounded-lg"
       />
-      {selectedNode && (
-        <div className="absolute bottom-4 left-4 bg-slate-800/90 backdrop-blur-sm rounded-lg p-4 text-white max-w-xs">
+      {selectedNode && tooltipPosition && (
+        <div
+          className="absolute z-50 bg-slate-800/95 backdrop-blur-sm rounded-lg p-3 text-white max-w-xs shadow-xl border border-slate-700"
+          style={{
+            left: Math.min(tooltipPosition.x + 15, width - 200),
+            top: Math.max(tooltipPosition.y - 60, 10),
+          }}
+        >
           <div className="flex items-center gap-2 mb-2">
             <div
               className="w-3 h-3 rounded-full"
@@ -288,13 +297,14 @@ export default function Graph2D({ nodes, links, onNodeClick, width = 800, height
             />
             <span className="text-xs uppercase text-slate-400">{selectedNode.type}</span>
           </div>
-          <p className="font-medium text-sm">{selectedNode.label}</p>
+          <p className="font-medium text-sm truncate">{selectedNode.label}</p>
           <p className="text-xs text-slate-400 mt-1">
             {selectedNode.chunkCount} chunks
             {selectedNode.tags && selectedNode.tags.length > 0 && (
               <span> · {selectedNode.tags.slice(0, 3).join(', ')}</span>
             )}
           </p>
+          <p className="text-xs text-blue-400 mt-2">Click again for details</p>
         </div>
       )}
     </div>

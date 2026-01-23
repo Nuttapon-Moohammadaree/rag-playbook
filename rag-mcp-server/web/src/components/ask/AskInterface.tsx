@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { MessageSquare, Send, RefreshCw, Settings2, CheckCircle, AlertTriangle, FileText } from 'lucide-react';
 import { clsx } from 'clsx';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { askQuestion, type AskResponse } from '../../api/client';
 
 export default function AskInterface() {
@@ -159,9 +161,9 @@ export default function AskInterface() {
               </div>
               <div className="flex-1">
                 <div className="prose prose-sm max-w-none text-gray-700">
-                  {result.answer.split('\n').map((paragraph, i) => (
-                    <p key={i}>{paragraph}</p>
-                  ))}
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {result.answer}
+                  </ReactMarkdown>
                 </div>
 
                 {/* Model info */}

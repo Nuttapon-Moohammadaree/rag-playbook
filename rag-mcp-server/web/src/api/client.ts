@@ -118,9 +118,20 @@ function extractErrorMessage(data: unknown, statusCode: number): string {
   }
 }
 
+/**
+ * Create an AbortController with optional timeout
+ */
+export function createAbortController(timeoutMs?: number): AbortController {
+  const controller = new AbortController();
+  if (timeoutMs) {
+    setTimeout(() => controller.abort(), timeoutMs);
+  }
+  return controller;
+}
+
 async function fetchApi<T>(
   endpoint: string,
-  options?: RequestInit
+  options?: RequestInit & { signal?: AbortSignal }
 ): Promise<ApiResponse<T>> {
   try {
     const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -154,7 +165,15 @@ async function fetchApi<T>(
       };
     }
 
-    return data as ApiResponse<T>;
+    // If the response already has 'success' field, return as-is
+    // Otherwise wrap it in ApiResponse format
+    if (typeof data === 'object' && data !== null && 'success' in data) {
+      return data as ApiResponse<T>;
+    }
+    return {
+      success: true,
+      data: data as T,
+    };
   } catch (error) {
     // Handle network errors
     let errorMessage = 'Network error. Please check your connection.';
@@ -194,7 +213,10 @@ export async function uploadDocument(
 /**
  * Upload a file directly via multipart form data
  */
-export async function uploadFile(file: File): Promise<ApiResponse<{
+export async function uploadFile(
+  file: File,
+  signal?: AbortSignal
+): Promise<ApiResponse<{
   documentId: string;
   filename: string;
   status: string;
@@ -208,6 +230,7 @@ export async function uploadFile(file: File): Promise<ApiResponse<{
     const response = await fetch(`${API_BASE}/documents/upload-file`, {
       method: 'POST',
       body: formData,
+      signal,
       // Don't set Content-Type header - browser will set it with boundary for multipart
     });
 
